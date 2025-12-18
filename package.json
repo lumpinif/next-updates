@@ -1,5 +1,5 @@
 {
-  "name": "tsdown-starter",
+  "name": "review-deps",
   "type": "module",
   "version": "0.0.0",
   "description": "A starter for creating a TypeScript package.",
@@ -16,6 +16,9 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
+  },
+  "bin": {
+    "review-deps": "./dist/bin.mjs"
   },
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -47,5 +50,8 @@
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
       "pnpm dlx ultracite fix"
     ]
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0"
   }
 }
