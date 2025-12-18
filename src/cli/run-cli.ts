@@ -4,6 +4,8 @@ export type RunCliOptions = {
   stderr?: NodeJS.WriteStream;
 };
 
+import { runReviewDepsFlow } from "./flows/review-deps-flow";
+import type { ReviewDepsDep } from "./prompts/review-deps";
 import { createClackUi } from "./ui/clack-ui";
 
 type CliCommand = "help" | "version" | "run";
@@ -38,16 +40,39 @@ function parseCommand(args: readonly string[]): CliCommand {
   return "run";
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+function parseDepOverride(args: readonly string[]): ReviewDepsDep | undefined {
+  const depIndex = args.findIndex(
+    (cliArg) => cliArg === "--dep" || cliArg.startsWith("--dep=")
+  );
+  if (depIndex === -1) {
+    return;
+  }
+
+  const depArg = args[depIndex];
+  let value: string | undefined;
+  if (depArg === "--dep") {
+    value = args[depIndex + 1];
+  } else if (depArg.startsWith("--dep=")) {
+    value = depArg.slice("--dep=".length);
+  }
+
+  if (
+    value === "all" ||
+    value === "dependencies" ||
+    value === "devDependencies"
+  ) {
+    return value;
+  }
+
+  return;
 }
 
 export async function runCli(options: RunCliOptions): Promise<void> {
   const stdout = options.stdout ?? process.stdout;
+  const stderr = options.stderr ?? process.stderr;
   const args = options.argv.slice(2);
   const command = parseCommand(args);
+  const depOverride = parseDepOverride(args);
 
   if (command === "version") {
     // Package version is wired through package managers; keeping placeholder until we formalize a version source.
@@ -60,18 +85,18 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return;
   }
 
-  const ui = createClackUi();
-  ui.intro("review-deps");
-
-  const action = await ui.selectAction();
-  if (action === "exit") {
-    ui.outro("Bye.");
+  try {
+    const ui = createClackUi({ stdout });
+    ui.intro("review-deps");
+    await runReviewDepsFlow({
+      cwd: process.cwd(),
+      ui,
+      depOverride,
+    });
+    return;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    stderr.write(`${message}\n`);
     return;
   }
-
-  await ui.runSpinner("Preparing…", async () => {
-    await delay(250);
-  });
-
-  ui.outro("You're all set!");
 }
