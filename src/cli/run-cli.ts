@@ -67,12 +67,17 @@ function parseDepOverride(args: readonly string[]): ReviewDepsDep | undefined {
   return;
 }
 
+function parseDebugDump(args: readonly string[]): boolean {
+  return args.includes("--debug-dump");
+}
+
 export async function runCli(options: RunCliOptions): Promise<void> {
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
   const args = options.argv.slice(2);
   const command = parseCommand(args);
   const depOverride = parseDepOverride(args);
+  const debugDump = parseDebugDump(args);
 
   if (command === "version") {
     // Package version is wired through package managers; keeping placeholder until we formalize a version source.
@@ -92,6 +97,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       cwd: process.cwd(),
       ui,
       depOverride,
+      debugDump,
     });
     return;
   } catch (error: unknown) {

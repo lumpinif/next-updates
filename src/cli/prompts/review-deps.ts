@@ -14,47 +14,51 @@ export type ReviewDepsPromptResult = {
 
 export async function promptReviewDeps(
   ui: ClackUi,
-  defaults: Partial<Pick<ReviewDepsPromptResult, "dep">> = {}
+  defaults: Partial<ReviewDepsPromptResult> = {}
 ): Promise<ReviewDepsPromptResult | null> {
-  const scope = await ui.selectOne<ReviewDepsScope>("Scope", [
-    {
-      value: "all",
-      label: "All deps",
-      hint: "Check root + all workspaces",
-    },
-    {
-      value: "root",
-      label: "Only root dependencies",
-      hint: "Check only root package.json",
-    },
-    {
-      value: "workspaces",
-      label: "Only workspaces dependencies",
-      hint: "Check all workspaces (exclude root)",
-    },
-  ]);
+  const scope =
+    defaults.scope ??
+    (await ui.selectOne<ReviewDepsScope>("Scope", [
+      {
+        value: "all",
+        label: "All deps",
+        hint: "Check root + all workspaces",
+      },
+      {
+        value: "root",
+        label: "Only root dependencies",
+        hint: "Check only root package.json",
+      },
+      {
+        value: "workspaces",
+        label: "Only workspaces dependencies",
+        hint: "Check all workspaces (exclude root)",
+      },
+    ]));
 
   if (scope === null) {
     return null;
   }
 
-  const target = await ui.selectOne<ReviewDepsTarget>("Target", [
-    {
-      value: "latest",
-      label: "latest",
-      hint: "Best for AI context (max changes)",
-    },
-    {
-      value: "minor",
-      label: "minor",
-      hint: "More conservative (no major bumps)",
-    },
-    {
-      value: "patch",
-      label: "patch",
-      hint: "Most conservative (patch only)",
-    },
-  ]);
+  const target =
+    defaults.target ??
+    (await ui.selectOne<ReviewDepsTarget>("Target", [
+      {
+        value: "latest",
+        label: "latest",
+        hint: "Best for AI context (max changes)",
+      },
+      {
+        value: "minor",
+        label: "minor",
+        hint: "More conservative (no major bumps)",
+      },
+      {
+        value: "patch",
+        label: "patch",
+        hint: "Most conservative (patch only)",
+      },
+    ]));
 
   if (target === null) {
     return null;
@@ -84,18 +88,20 @@ export async function promptReviewDeps(
     return null;
   }
 
-  const output = await ui.selectOne<ReviewDepsOutput>("Output", [
-    {
-      value: "prompt",
-      label: "Prompt",
-      hint: "Print Markdown to stdout (copy/paste to AI)",
-    },
-    {
-      value: "json",
-      label: "JSON",
-      hint: "Write report file to current directory",
-    },
-  ]);
+  const output =
+    defaults.output ??
+    (await ui.selectOne<ReviewDepsOutput>("Output", [
+      {
+        value: "prompt",
+        label: "Prompt",
+        hint: "Print Markdown to stdout (copy/paste to AI)",
+      },
+      {
+        value: "json",
+        label: "JSON",
+        hint: "Write report file to current directory",
+      },
+    ]));
 
   if (output === null) {
     return null;

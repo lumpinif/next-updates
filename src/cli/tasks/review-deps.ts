@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { type RunOptions, run } from "npm-check-updates";
+import { run as ncuRun, type RunOptions } from "npm-check-updates";
 
 import type {
   ReviewDepsDep,
@@ -74,6 +74,16 @@ function createRunOptions(
   return runOptions;
 }
 
+function resolveScopeEffective(
+  scopeRequested: ReviewDepsScope,
+  workspacesAvailable: boolean
+): ReviewDepsScope {
+  if (workspacesAvailable || scopeRequested === "root") {
+    return scopeRequested;
+  }
+  return "root";
+}
+
 async function readPackageJson(packageFile: string): Promise<PackageJson> {
   const raw = await fs.readFile(packageFile, "utf8");
   const parsed: unknown = JSON.parse(raw);
@@ -106,6 +116,65 @@ function getDependencyTypeAndCurrentSpec(
 type NcuUpgradedFlat = Record<string, string>;
 type NcuUpgradedWorkspaces = Record<string, NcuUpgradedFlat>;
 
+type NcuUpgraded = NcuUpgradedFlat | NcuUpgradedWorkspaces | undefined;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function coerceNcuUpgraded(result: unknown): NcuUpgraded {
+  if (result === undefined) {
+    return;
+  }
+
+  const record = toRecordOrNull(result);
+  if (record === null) {
+    throw new Error("Invalid upgraded dependencies found");
+  }
+
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    return {};
+  }
+
+  if (looksLikeWorkspaces(entries)) {
+    return coerceWorkspaces(entries);
+  }
+
+  return coerceFlat(entries);
+}
+
+function toRecordOrNull(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function looksLikeWorkspaces(entries: [string, unknown][]): boolean {
+  return entries.some(([key]) => key.endsWith("package.json"));
+}
+
+function coerceWorkspaces(entries: [string, unknown][]): NcuUpgradedWorkspaces {
+  const workspaces: NcuUpgradedWorkspaces = {};
+  for (const [packageFile, upgrades] of entries) {
+    const upgradesRecord = toRecordOrNull(upgrades);
+    if (upgradesRecord === null) {
+      throw new Error("Invalid upgraded dependencies found");
+    }
+    workspaces[packageFile] = coerceFlat(Object.entries(upgradesRecord));
+  }
+  return workspaces;
+}
+
+function coerceFlat(entries: [string, unknown][]): NcuUpgradedFlat {
+  const flat: NcuUpgradedFlat = {};
+  for (const [packageName, upgradedSpec] of entries) {
+    if (typeof upgradedSpec !== "string") {
+      throw new Error("Invalid upgraded dependencies found");
+    }
+    flat[packageName] = upgradedSpec;
+  }
+  return flat;
+}
+
 function isWorkspacesResult(result: unknown): result is NcuUpgradedWorkspaces {
   if (typeof result !== "object" || result === null) {
     return false;
@@ -120,82 +189,55 @@ function isWorkspacesResult(result: unknown): result is NcuUpgradedWorkspaces {
   return false;
 }
 
-export async function collectReviewDepsReport(options: {
-  cwd: string;
-  scope: ReviewDepsScope;
-  target: ReviewDepsTarget;
-  dep: ReviewDepsDep;
-}): Promise<ReviewDepsReport> {
-  const generatedAt = new Date().toISOString();
+type NormalizedNcuCandidate = {
+  packageFile: string;
+  packageName: string;
+  upgradedSpec: string;
+};
 
-  const rootPackageFile = path.resolve(options.cwd, "package.json");
-  const rootPackageJson = await readPackageJson(rootPackageFile);
-  const workspacesAvailable = hasWorkspacesField(rootPackageJson);
-
-  let scopeEffective: ReviewDepsScope = options.scope;
-  if (!workspacesAvailable && options.scope === "all") {
-    scopeEffective = "root";
-  }
-
-  if (!workspacesAvailable && options.scope === "workspaces") {
-    return {
-      generatedAt,
-      options: {
-        scopeRequested: options.scope,
-        scopeEffective,
-        target: options.target,
-        dep: options.dep,
-      },
-      candidates: [],
-    };
-  }
-
-  const runOptions = createRunOptions(
-    options.cwd,
-    scopeEffective,
-    options.target,
-    options.dep
-  );
-
-  const upgraded = await run(runOptions);
-  const candidates: ReviewDepsCandidate[] = [];
-
+function normalizeNcuResult(upgraded: NcuUpgraded): NormalizedNcuCandidate[] {
   if (upgraded === undefined) {
-    return {
-      generatedAt,
-      options: {
-        scopeRequested: options.scope,
-        scopeEffective,
-        target: options.target,
-        dep: options.dep,
-      },
-      candidates,
-    };
+    return [];
   }
 
   if (isWorkspacesResult(upgraded)) {
-    for (const [packageFileRelative, upgradedMap] of Object.entries(upgraded)) {
-      const packageFile = path.resolve(options.cwd, packageFileRelative);
-      const packageJson = await readPackageJson(packageFile);
-
-      for (const [packageName, upgradedSpec] of Object.entries(upgradedMap)) {
-        const { dependencyType, currentSpec } = getDependencyTypeAndCurrentSpec(
-          packageJson,
-          packageName
-        );
-
-        candidates.push({
-          packageFile: packageFileRelative,
-          dependencyType,
+    const normalized: NormalizedNcuCandidate[] = [];
+    for (const [packageFile, upgrades] of Object.entries(upgraded)) {
+      for (const [packageName, upgradedSpec] of Object.entries(upgrades)) {
+        normalized.push({
+          packageFile,
           packageName,
-          currentSpec,
           upgradedSpec,
         });
       }
     }
-  } else {
-    const upgradedMap = upgraded as NcuUpgradedFlat;
-    const packageFile = path.resolve(options.cwd, "package.json");
+    return normalized;
+  }
+
+  return Object.entries(upgraded).map(([packageName, upgradedSpec]) => ({
+    packageFile: "package.json",
+    packageName,
+    upgradedSpec,
+  }));
+}
+
+async function writeDebugDump(
+  dir: string,
+  fileName: string,
+  data: unknown
+): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  const outPath = path.join(dir, fileName);
+  await fs.writeFile(outPath, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+async function buildCandidatesFromWorkspaces(
+  cwd: string,
+  upgraded: NcuUpgradedWorkspaces
+): Promise<ReviewDepsCandidate[]> {
+  const candidates: ReviewDepsCandidate[] = [];
+  for (const [packageFileRelative, upgradedMap] of Object.entries(upgraded)) {
+    const packageFile = path.resolve(cwd, packageFileRelative);
     const packageJson = await readPackageJson(packageFile);
 
     for (const [packageName, upgradedSpec] of Object.entries(upgradedMap)) {
@@ -205,7 +247,7 @@ export async function collectReviewDepsReport(options: {
       );
 
       candidates.push({
-        packageFile: "package.json",
+        packageFile: packageFileRelative,
         dependencyType,
         packageName,
         currentSpec,
@@ -213,13 +255,104 @@ export async function collectReviewDepsReport(options: {
       });
     }
   }
+  return candidates;
+}
 
+async function buildCandidatesFromRoot(
+  cwd: string,
+  upgraded: NcuUpgradedFlat
+): Promise<ReviewDepsCandidate[]> {
+  const packageFile = path.resolve(cwd, "package.json");
+  const packageJson = await readPackageJson(packageFile);
+  return Object.entries(upgraded).map(([packageName, upgradedSpec]) => {
+    const { dependencyType, currentSpec } = getDependencyTypeAndCurrentSpec(
+      packageJson,
+      packageName
+    );
+
+    return {
+      packageFile: "package.json",
+      dependencyType,
+      packageName,
+      currentSpec,
+      upgradedSpec,
+    };
+  });
+}
+
+function buildCandidates(
+  cwd: string,
+  upgraded: NcuUpgraded
+): Promise<ReviewDepsCandidate[]> {
+  if (upgraded === undefined) {
+    return Promise.resolve([]);
+  }
+
+  if (isWorkspacesResult(upgraded)) {
+    return buildCandidatesFromWorkspaces(cwd, upgraded);
+  }
+
+  return buildCandidatesFromRoot(cwd, upgraded);
+}
+
+function sortCandidates(candidates: ReviewDepsCandidate[]): void {
   candidates.sort((a, b) => {
     if (a.packageFile !== b.packageFile) {
       return a.packageFile.localeCompare(b.packageFile);
     }
     return a.packageName.localeCompare(b.packageName);
   });
+}
+
+export async function collectReviewDepsReport(options: {
+  cwd: string;
+  scope: ReviewDepsScope;
+  target: ReviewDepsTarget;
+  dep: ReviewDepsDep;
+  debugDumpDir?: string;
+}): Promise<ReviewDepsReport> {
+  const generatedAt = new Date().toISOString();
+
+  const rootPackageFile = path.resolve(options.cwd, "package.json");
+  const rootPackageJson = await readPackageJson(rootPackageFile);
+  const workspacesAvailable = hasWorkspacesField(rootPackageJson);
+
+  const scopeEffective = resolveScopeEffective(
+    options.scope,
+    workspacesAvailable
+  );
+
+  const runOptions = createRunOptions(
+    options.cwd,
+    scopeEffective,
+    options.target,
+    options.dep
+  );
+
+  const upgradedRaw = await ncuRun(runOptions);
+  const upgraded = coerceNcuUpgraded(upgradedRaw);
+  if (options.debugDumpDir) {
+    await writeDebugDump(
+      options.debugDumpDir,
+      "00-ncu-raw.json",
+      upgradedRaw ?? null
+    );
+    const normalized = normalizeNcuResult(upgraded);
+    await writeDebugDump(
+      options.debugDumpDir,
+      "01-ncu-normalized.json",
+      normalized
+    );
+  }
+  const candidates = await buildCandidates(options.cwd, upgraded);
+  sortCandidates(candidates);
+  if (options.debugDumpDir) {
+    await writeDebugDump(
+      options.debugDumpDir,
+      "02-candidates-with-current.json",
+      candidates
+    );
+  }
 
   return {
     generatedAt,
