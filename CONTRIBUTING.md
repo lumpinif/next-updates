@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve `review-deps`!
+Thanks for helping improve `next-updates`!
 
 ## Ground Rules
 

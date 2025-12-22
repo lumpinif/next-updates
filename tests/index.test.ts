@@ -5,12 +5,12 @@ import path from "node:path";
 import { expect, test } from "vitest";
 
 import {
-  formatReviewDepsPromptMarkdown,
-  writeReviewDepsReportJson,
-} from "../src/cli/tasks/review-deps";
+  formatNextUpdatesPromptMarkdown,
+  writeNextUpdatesReportJson,
+} from "../src/cli/tasks/next-updates";
 
-test("formatReviewDepsPromptMarkdown renders grouped candidates", () => {
-  const markdown = formatReviewDepsPromptMarkdown({
+test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
+  const markdown = formatNextUpdatesPromptMarkdown({
     generatedAt: "2025-01-01T00:00:00.000Z",
     options: {
       scopeRequested: "all",
@@ -36,18 +36,18 @@ test("formatReviewDepsPromptMarkdown renders grouped candidates", () => {
     ],
   });
 
-  expect(markdown).toContain("# review-deps (P0)");
+  expect(markdown).toContain("# next-updates (P0)");
   expect(markdown).toContain("## package.json");
   expect(markdown).toContain("## packages/a/package.json");
   expect(markdown).toContain("`lodash`");
   expect(markdown).toContain("`vitest` (dev)");
 });
 
-test("writeReviewDepsReportJson writes to provided filename", async () => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "review-deps-"));
-  const outPath = await writeReviewDepsReportJson({
+test("writeNextUpdatesReportJson writes to provided filename", async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "next-updates-"));
+  const outPath = await writeNextUpdatesReportJson({
     cwd,
-    fileName: "review-deps-report.json",
+    fileName: "next-updates-report.json",
     report: {
       generatedAt: "2025-01-01T00:00:00.000Z",
       options: {
@@ -60,7 +60,7 @@ test("writeReviewDepsReportJson writes to provided filename", async () => {
     },
   });
 
-  expect(outPath).toBe(path.join(cwd, "review-deps-report.json"));
+  expect(outPath).toBe(path.join(cwd, "next-updates-report.json"));
   const contents = await fs.readFile(outPath, "utf8");
   expect(contents).toContain('"scopeRequested": "root"');
 });

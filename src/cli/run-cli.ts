@@ -4,18 +4,18 @@ export type RunCliOptions = {
   stderr?: NodeJS.WriteStream;
 };
 
-import { runReviewDepsFlow } from "./flows/review-deps-flow";
-import type { ReviewDepsDep } from "./prompts/review-deps";
+import { runNextUpdatesFlow } from "./flows/next-updates-flow";
+import type { NextUpdatesDep } from "./prompts/next-updates";
 import { createClackUi } from "./ui/clack-ui";
 
 type CliCommand = "help" | "version" | "run";
 
-const HELP_TEXT = `review-deps
+const HELP_TEXT = `next-updates
 
 Usage:
-  review-deps
-  review-deps --help
-  review-deps --version
+  next-updates
+  next-updates --help
+  next-updates --version
 `;
 
 function writeLine(stream: NodeJS.WriteStream, line: string): void {
@@ -40,7 +40,7 @@ function parseCommand(args: readonly string[]): CliCommand {
   return "run";
 }
 
-function parseDepOverride(args: readonly string[]): ReviewDepsDep | undefined {
+function parseDepOverride(args: readonly string[]): NextUpdatesDep | undefined {
   const depIndex = args.findIndex(
     (cliArg) => cliArg === "--dep" || cliArg.startsWith("--dep=")
   );
@@ -81,7 +81,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
   if (command === "version") {
     // Package version is wired through package managers; keeping placeholder until we formalize a version source.
-    writeLine(stdout, "review-deps (version not wired yet)");
+    writeLine(stdout, "next-updates (version not wired yet)");
     return;
   }
 
@@ -92,8 +92,8 @@ export async function runCli(options: RunCliOptions): Promise<void> {
 
   try {
     const ui = createClackUi({ stdout });
-    ui.intro("review-deps");
-    await runReviewDepsFlow({
+    ui.intro("next-updates");
+    await runNextUpdatesFlow({
       cwd: process.cwd(),
       ui,
       depOverride,

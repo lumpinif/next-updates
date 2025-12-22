@@ -4,12 +4,12 @@ import path from "node:path";
 import { run as ncuRun, type RunOptions } from "npm-check-updates";
 
 import type {
-  ReviewDepsDep,
-  ReviewDepsScope,
-  ReviewDepsTarget,
-} from "../prompts/review-deps";
+  NextUpdatesDep,
+  NextUpdatesScope,
+  NextUpdatesTarget,
+} from "../prompts/next-updates";
 
-export type ReviewDepsCandidate = {
+export type NextUpdatesCandidate = {
   packageFile: string;
   dependencyType: "dependencies" | "devDependencies" | "unknown";
   packageName: string;
@@ -17,15 +17,15 @@ export type ReviewDepsCandidate = {
   upgradedSpec: string;
 };
 
-export type ReviewDepsReport = {
+export type NextUpdatesReport = {
   generatedAt: string;
   options: {
-    scopeRequested: ReviewDepsScope;
-    scopeEffective: ReviewDepsScope;
-    target: ReviewDepsTarget;
-    dep: ReviewDepsDep;
+    scopeRequested: NextUpdatesScope;
+    scopeEffective: NextUpdatesScope;
+    target: NextUpdatesTarget;
+    dep: NextUpdatesDep;
   };
-  candidates: ReviewDepsCandidate[];
+  candidates: NextUpdatesCandidate[];
 };
 
 type PackageJson = {
@@ -40,9 +40,9 @@ function hasWorkspacesField(packageJson: PackageJson): boolean {
 
 function createRunOptions(
   cwd: string,
-  scope: ReviewDepsScope,
-  target: ReviewDepsTarget,
-  dep: ReviewDepsDep
+  scope: NextUpdatesScope,
+  target: NextUpdatesTarget,
+  dep: NextUpdatesDep
 ): RunOptions {
   let depValue: readonly string[];
   if (dep === "all") {
@@ -75,9 +75,9 @@ function createRunOptions(
 }
 
 function resolveScopeEffective(
-  scopeRequested: ReviewDepsScope,
+  scopeRequested: NextUpdatesScope,
   workspacesAvailable: boolean
-): ReviewDepsScope {
+): NextUpdatesScope {
   if (workspacesAvailable || scopeRequested === "root") {
     return scopeRequested;
   }
@@ -97,7 +97,7 @@ function getDependencyTypeAndCurrentSpec(
   packageJson: PackageJson,
   packageName: string
 ): {
-  dependencyType: ReviewDepsCandidate["dependencyType"];
+  dependencyType: NextUpdatesCandidate["dependencyType"];
   currentSpec: string;
 } {
   const fromDeps = packageJson.dependencies?.[packageName];
@@ -234,8 +234,8 @@ async function writeDebugDump(
 async function buildCandidatesFromWorkspaces(
   cwd: string,
   upgraded: NcuUpgradedWorkspaces
-): Promise<ReviewDepsCandidate[]> {
-  const candidates: ReviewDepsCandidate[] = [];
+): Promise<NextUpdatesCandidate[]> {
+  const candidates: NextUpdatesCandidate[] = [];
   for (const [packageFileRelative, upgradedMap] of Object.entries(upgraded)) {
     const packageFile = path.resolve(cwd, packageFileRelative);
     const packageJson = await readPackageJson(packageFile);
@@ -261,7 +261,7 @@ async function buildCandidatesFromWorkspaces(
 async function buildCandidatesFromRoot(
   cwd: string,
   upgraded: NcuUpgradedFlat
-): Promise<ReviewDepsCandidate[]> {
+): Promise<NextUpdatesCandidate[]> {
   const packageFile = path.resolve(cwd, "package.json");
   const packageJson = await readPackageJson(packageFile);
   return Object.entries(upgraded).map(([packageName, upgradedSpec]) => {
@@ -283,7 +283,7 @@ async function buildCandidatesFromRoot(
 function buildCandidates(
   cwd: string,
   upgraded: NcuUpgraded
-): Promise<ReviewDepsCandidate[]> {
+): Promise<NextUpdatesCandidate[]> {
   if (upgraded === undefined) {
     return Promise.resolve([]);
   }
@@ -295,7 +295,7 @@ function buildCandidates(
   return buildCandidatesFromRoot(cwd, upgraded);
 }
 
-function sortCandidates(candidates: ReviewDepsCandidate[]): void {
+function sortCandidates(candidates: NextUpdatesCandidate[]): void {
   candidates.sort((a, b) => {
     if (a.packageFile !== b.packageFile) {
       return a.packageFile.localeCompare(b.packageFile);
@@ -304,13 +304,13 @@ function sortCandidates(candidates: ReviewDepsCandidate[]): void {
   });
 }
 
-export async function collectReviewDepsReport(options: {
+export async function collectNextUpdatesReport(options: {
   cwd: string;
-  scope: ReviewDepsScope;
-  target: ReviewDepsTarget;
-  dep: ReviewDepsDep;
+  scope: NextUpdatesScope;
+  target: NextUpdatesTarget;
+  dep: NextUpdatesDep;
   debugDumpDir?: string;
-}): Promise<ReviewDepsReport> {
+}): Promise<NextUpdatesReport> {
   const generatedAt = new Date().toISOString();
 
   const rootPackageFile = path.resolve(options.cwd, "package.json");
@@ -366,11 +366,11 @@ export async function collectReviewDepsReport(options: {
   };
 }
 
-export function formatReviewDepsPromptMarkdown(
-  report: ReviewDepsReport
+export function formatNextUpdatesPromptMarkdown(
+  report: NextUpdatesReport
 ): string {
   const lines: string[] = [
-    "# review-deps (P0)",
+    "# next-updates (P0)",
     "",
     "Candidate dependency updates (from npm-check-updates).",
     "",
@@ -401,9 +401,9 @@ export function formatReviewDepsPromptMarkdown(
 }
 
 function groupCandidatesByPackageFile(
-  candidates: readonly ReviewDepsCandidate[]
-): Map<string, ReviewDepsCandidate[]> {
-  const grouped = new Map<string, ReviewDepsCandidate[]>();
+  candidates: readonly NextUpdatesCandidate[]
+): Map<string, NextUpdatesCandidate[]> {
+  const grouped = new Map<string, NextUpdatesCandidate[]>();
   for (const candidate of candidates) {
     const list = grouped.get(candidate.packageFile);
     if (list === undefined) {
@@ -415,7 +415,7 @@ function groupCandidatesByPackageFile(
   return grouped;
 }
 
-function formatCandidateLine(candidate: ReviewDepsCandidate): string {
+function formatCandidateLine(candidate: NextUpdatesCandidate): string {
   const current =
     candidate.currentSpec === "" ? "<unknown>" : candidate.currentSpec;
 
@@ -427,10 +427,10 @@ function formatCandidateLine(candidate: ReviewDepsCandidate): string {
   return `- \`${candidate.packageName}\`${typeSuffix}: \`${current}\` → \`${candidate.upgradedSpec}\``;
 }
 
-export async function writeReviewDepsReportJson(options: {
+export async function writeNextUpdatesReportJson(options: {
   cwd: string;
   fileName: string;
-  report: ReviewDepsReport;
+  report: NextUpdatesReport;
 }): Promise<string> {
   const outPath = path.resolve(options.cwd, options.fileName);
   await fs.writeFile(outPath, `${JSON.stringify(options.report, null, 2)}\n`);

@@ -8,7 +8,7 @@ import {
   spinner,
 } from "@clack/prompts";
 
-export type UiAction = "review-deps" | "exit";
+export type UiAction = "next-updates" | "exit";
 
 export type SelectOption<TValue extends string> = Option<TValue>;
 
@@ -52,7 +52,7 @@ export function createClackUi(options: CreateClackUiOptions = {}): ClackUi {
       message: "What do you want to do?",
       options: [
         {
-          value: "review-deps",
+          value: "next-updates",
           label: "Review dependencies",
         },
         {

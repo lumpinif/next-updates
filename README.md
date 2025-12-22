@@ -1,10 +1,10 @@
-# review-deps
+# next-updates
 
 Evidence-driven dependency upgrade assistant for Node.js projects.
 
 ## What it is
 
-`review-deps` scans your project, collects reproducible evidence (versions, dependency graph context, security advisories, diffs/links), and outputs a concise “task card” you can paste into any AI (or just read yourself) to decide what to upgrade first.
+`next-updates` scans your project, collects reproducible evidence (versions, dependency graph context, security advisories, diffs/links), and outputs a concise “task card” you can paste into any AI (or just read yourself) to decide what to upgrade first.
 
 Design goals:
 
@@ -28,10 +28,10 @@ Status: this repo is currently **early scaffolding** (you can see the Clack UI),
 
 Once published to npm:
 
-- `npx review-deps@latest`
-- `pnpm dlx review-deps@latest`
-- `yarn dlx review-deps@latest`
-- `bunx review-deps@latest`
+- `npx next-updates@latest`
+- `pnpm dlx next-updates@latest`
+- `yarn dlx next-updates@latest`
+- `bunx next-updates@latest`
 
 Local dev (this repository):
 
@@ -41,7 +41,7 @@ Local dev (this repository):
 
 ## Docs
 
-- Product/tech design: `dev-spec/review-deps-prep.md`
+- Product/tech design: `dev-spec/next-updates-prep.md`
 
 ## Contributing
 

@@ -1,24 +1,24 @@
 {
-  "name": "review-deps",
+  "name": "next-updates",
   "type": "module",
   "version": "0.0.0",
   "description": "Evidence-driven dependency upgrade assistant for Node.js projects.",
   "author": "@felixlu1018",
   "license": "MIT",
-  "homepage": "https://github.com/lumpinif/review-deps#readme",
+  "homepage": "https://github.com/lumpinif/next-updates#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lumpinif/review-deps.git"
+    "url": "git+https://github.com/lumpinif/next-updates.git"
   },
   "bugs": {
-    "url": "https://github.com/lumpinif/review-deps/issues"
+    "url": "https://github.com/lumpinif/next-updates/issues"
   },
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
   },
   "bin": {
-    "review-deps": "./dist/bin.mjs"
+    "next-updates": "./dist/bin.mjs"
   },
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",

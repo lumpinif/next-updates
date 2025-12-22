@@ -1,24 +1,24 @@
 import type { ClackUi } from "../ui/clack-ui";
 
-export type ReviewDepsScope = "all" | "root" | "workspaces";
-export type ReviewDepsTarget = "latest" | "minor" | "patch";
-export type ReviewDepsDep = "all" | "dependencies" | "devDependencies";
-export type ReviewDepsOutput = "prompt" | "json";
+export type NextUpdatesScope = "all" | "root" | "workspaces";
+export type NextUpdatesTarget = "latest" | "minor" | "patch";
+export type NextUpdatesDep = "all" | "dependencies" | "devDependencies";
+export type NextUpdatesOutput = "prompt" | "json";
 
-export type ReviewDepsPromptResult = {
-  scope: ReviewDepsScope;
-  target: ReviewDepsTarget;
-  dep: ReviewDepsDep;
-  output: ReviewDepsOutput;
+export type NextUpdatesPromptResult = {
+  scope: NextUpdatesScope;
+  target: NextUpdatesTarget;
+  dep: NextUpdatesDep;
+  output: NextUpdatesOutput;
 };
 
-export async function promptReviewDeps(
+export async function promptNextUpdates(
   ui: ClackUi,
-  defaults: Partial<ReviewDepsPromptResult> = {}
-): Promise<ReviewDepsPromptResult | null> {
+  defaults: Partial<NextUpdatesPromptResult> = {}
+): Promise<NextUpdatesPromptResult | null> {
   const scope =
     defaults.scope ??
-    (await ui.selectOne<ReviewDepsScope>("Scope", [
+    (await ui.selectOne<NextUpdatesScope>("Scope", [
       {
         value: "all",
         label: "All deps",
@@ -42,7 +42,7 @@ export async function promptReviewDeps(
 
   const target =
     defaults.target ??
-    (await ui.selectOne<ReviewDepsTarget>("Target", [
+    (await ui.selectOne<NextUpdatesTarget>("Target", [
       {
         value: "latest",
         label: "latest",
@@ -66,7 +66,7 @@ export async function promptReviewDeps(
 
   const dep =
     defaults.dep ??
-    (await ui.selectOne<ReviewDepsDep>("Dependency types (--dep)", [
+    (await ui.selectOne<NextUpdatesDep>("Dependency types (--dep)", [
       {
         value: "all",
         label: "all",
@@ -90,7 +90,7 @@ export async function promptReviewDeps(
 
   const output =
     defaults.output ??
-    (await ui.selectOne<ReviewDepsOutput>("Output", [
+    (await ui.selectOne<NextUpdatesOutput>("Output", [
       {
         value: "prompt",
         label: "Prompt",
