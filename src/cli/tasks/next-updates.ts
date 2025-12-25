@@ -55,12 +55,30 @@ type PackageLock = {
   dependencies?: Record<string, { version?: string }>;
 };
 
+type BunLockfile = {
+  packages?: Record<string, unknown>;
+};
+
+type YarnBerryLockfile = Record<string, unknown>;
+
 type InstalledVersionLookup = (
   packageFile: string,
-  packageName: string
+  packageName: string,
+  currentRange: string
 ) => string | null;
 
 type FilterResults = NonNullable<RunOptions["filterResults"]>;
+
+type YarnDescriptorVersion = {
+  descriptor: string;
+  version: string;
+};
+
+type YarnInstalledIndex = Map<string, YarnDescriptorVersion[]>;
+
+const yarnClassicVersionRegex = /^version\s+["'](.+)["']/;
+const bunTrailingCommaRegex = /,\s*([}\]])/g;
+const lineBreakRegex = /\r?\n/;
 
 function hasWorkspacesField(packageJson: PackageJson): boolean {
   return packageJson.workspaces !== undefined;
@@ -146,16 +164,25 @@ async function createInstalledVersionLookup(
   if (lockfile?.type === "npm") {
     return createNpmInstalledVersionLookup(lockfile.path);
   }
+  if (lockfile?.type === "yarn") {
+    return createYarnInstalledVersionLookup(lockfile.path);
+  }
+  if (lockfile?.type === "bun") {
+    return createBunInstalledVersionLookup(lockfile.path);
+  }
   return () => null;
 }
 
 async function findLockfile(
   cwd: string
-): Promise<{ type: "pnpm" | "npm"; path: string } | null> {
-  const candidates: { type: "pnpm" | "npm"; path: string }[] = [
-    { type: "pnpm", path: path.resolve(cwd, "pnpm-lock.yaml") },
-    { type: "npm", path: path.resolve(cwd, "package-lock.json") },
-  ];
+): Promise<{ type: "pnpm" | "npm" | "yarn" | "bun"; path: string } | null> {
+  const candidates: { type: "pnpm" | "npm" | "yarn" | "bun"; path: string }[] =
+    [
+      { type: "pnpm", path: path.resolve(cwd, "pnpm-lock.yaml") },
+      { type: "npm", path: path.resolve(cwd, "package-lock.json") },
+      { type: "yarn", path: path.resolve(cwd, "yarn.lock") },
+      { type: "bun", path: path.resolve(cwd, "bun.lock") },
+    ];
 
   for (const candidate of candidates) {
     try {
@@ -185,7 +212,7 @@ async function createPnpmInstalledVersionLookup(
     }
 
     const importers = lockfile.importers as Record<string, PnpmImporter>;
-    return (packageFile, packageName) => {
+    return (packageFile, packageName, _currentRange) => {
       const importerKey = packageFileToImporterKey(packageFile);
       const importer = importers[importerKey];
       if (!importer) {
@@ -257,7 +284,7 @@ async function createNpmInstalledVersionLookup(
       ? (lockfile.dependencies as Record<string, { version?: string }>)
       : null;
 
-    return (_packageFile, packageName) => {
+    return (_packageFile, packageName, _currentRange) => {
       if (packages) {
         const key = path.posix.join("node_modules", packageName);
         const entry = packages[key];
@@ -278,6 +305,270 @@ async function createNpmInstalledVersionLookup(
   } catch {
     return () => null;
   }
+}
+
+async function createYarnInstalledVersionLookup(
+  lockfilePath: string
+): Promise<InstalledVersionLookup> {
+  try {
+    const raw = await fs.readFile(lockfilePath, "utf8");
+    let index: YarnInstalledIndex | null = null;
+
+    if (raw.includes("__metadata:")) {
+      try {
+        const parsed: unknown = parseYaml(raw);
+        if (isRecord(parsed)) {
+          index = buildYarnDescriptorIndexFromBerry(
+            parsed as YarnBerryLockfile
+          );
+        }
+      } catch {
+        index = null;
+      }
+    }
+
+    if (index === null) {
+      index = buildYarnDescriptorIndexFromClassic(raw);
+    }
+
+    return createYarnInstalledVersionLookupFromIndex(index);
+  } catch {
+    return () => null;
+  }
+}
+
+function createYarnInstalledVersionLookupFromIndex(
+  index: YarnInstalledIndex
+): InstalledVersionLookup {
+  return (_packageFile, packageName, currentRange) => {
+    if (currentRange === "") {
+      return null;
+    }
+    const entries = index.get(packageName);
+    if (!entries) {
+      return null;
+    }
+    for (const entry of entries) {
+      if (matchesYarnDescriptor(entry.descriptor, packageName, currentRange)) {
+        return entry.version;
+      }
+    }
+    return null;
+  };
+}
+
+function buildYarnDescriptorIndexFromBerry(
+  lockfile: YarnBerryLockfile
+): YarnInstalledIndex {
+  const index: YarnInstalledIndex = new Map();
+  for (const [descriptorList, entry] of Object.entries(lockfile)) {
+    if (descriptorList === "__metadata") {
+      continue;
+    }
+    const version = getYarnEntryVersion(entry);
+    if (!version) {
+      continue;
+    }
+    for (const descriptor of splitYarnDescriptorList(descriptorList)) {
+      addYarnDescriptorEntry(index, descriptor, version);
+    }
+  }
+  return index;
+}
+
+function buildYarnDescriptorIndexFromClassic(raw: string): YarnInstalledIndex {
+  const index: YarnInstalledIndex = new Map();
+  const lines = raw.split(lineBreakRegex);
+  let currentDescriptors: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) {
+      continue;
+    }
+    if (!line.startsWith(" ")) {
+      currentDescriptors = splitYarnKeyLine(line);
+      continue;
+    }
+    if (currentDescriptors.length === 0) {
+      continue;
+    }
+    const match = yarnClassicVersionRegex.exec(trimmed);
+    if (!match) {
+      continue;
+    }
+    const version = normalizeInstalledVersion(match[1]);
+    for (const descriptor of currentDescriptors) {
+      addYarnDescriptorEntry(index, descriptor, version);
+    }
+  }
+  return index;
+}
+
+function addYarnDescriptorEntry(
+  index: YarnInstalledIndex,
+  descriptor: string,
+  version: string
+): void {
+  const packageName = getYarnDescriptorPackageName(descriptor);
+  if (!packageName) {
+    return;
+  }
+  const existing = index.get(packageName);
+  if (existing) {
+    existing.push({ descriptor, version });
+    return;
+  }
+  index.set(packageName, [{ descriptor, version }]);
+}
+
+function getYarnDescriptorPackageName(descriptor: string): string | null {
+  const atIndex = descriptor.lastIndexOf("@");
+  if (atIndex <= 0) {
+    return null;
+  }
+  return descriptor.slice(0, atIndex);
+}
+
+function getYarnEntryVersion(entry: unknown): string | null {
+  const record = toRecordOrNull(entry);
+  if (record === null) {
+    return null;
+  }
+  const version = record.version;
+  if (typeof version !== "string") {
+    return null;
+  }
+  return normalizeInstalledVersion(version);
+}
+
+function splitYarnKeyLine(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed.endsWith(":")) {
+    return [];
+  }
+  const content = trimmed.slice(0, -1).trim();
+  if (content === "") {
+    return [];
+  }
+  return splitYarnDescriptorList(content);
+}
+
+function splitYarnDescriptorList(content: string): string[] {
+  const descriptors: string[] = [];
+  let current = "";
+  let inQuote = false;
+  let quoteChar = "";
+
+  for (const char of content) {
+    if (
+      (char === '"' || char === "'") &&
+      (quoteChar === "" || char === quoteChar)
+    ) {
+      if (inQuote) {
+        inQuote = false;
+        quoteChar = "";
+      } else {
+        inQuote = true;
+        quoteChar = char;
+      }
+      current += char;
+      continue;
+    }
+
+    if (char === "," && !inQuote) {
+      const trimmed = current.trim();
+      if (trimmed !== "") {
+        descriptors.push(stripYarnQuotes(trimmed));
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed !== "") {
+    descriptors.push(stripYarnQuotes(trimmed));
+  }
+
+  return descriptors;
+}
+
+function stripYarnQuotes(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function matchesYarnDescriptor(
+  descriptor: string,
+  packageName: string,
+  currentRange: string
+): boolean {
+  if (currentRange === "") {
+    return false;
+  }
+  if (!descriptor.startsWith(`${packageName}@`)) {
+    return false;
+  }
+  const range = descriptor.slice(`${packageName}@`.length);
+  if (range === currentRange) {
+    return true;
+  }
+  return range.endsWith(`:${currentRange}`);
+}
+
+async function createBunInstalledVersionLookup(
+  lockfilePath: string
+): Promise<InstalledVersionLookup> {
+  try {
+    const raw = await fs.readFile(lockfilePath, "utf8");
+    const parsed = parseBunLockfile(raw);
+    if (!(parsed && isRecord(parsed.packages))) {
+      return () => null;
+    }
+
+    const packages = parsed.packages as Record<string, unknown>;
+
+    return (_packageFile, packageName, _currentRange) => {
+      const entry = packages[packageName];
+      if (!Array.isArray(entry) || entry.length === 0) {
+        return null;
+      }
+      return extractBunVersion(entry[0]);
+    };
+  } catch {
+    return () => null;
+  }
+}
+
+function parseBunLockfile(raw: string): BunLockfile | null {
+  try {
+    const cleaned = raw.replace(bunTrailingCommaRegex, "$1");
+    const parsed: unknown = JSON.parse(cleaned);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+    return parsed as BunLockfile;
+  } catch {
+    return null;
+  }
+}
+
+function extractBunVersion(entry: unknown): string | null {
+  if (typeof entry !== "string") {
+    return null;
+  }
+  const atIndex = entry.lastIndexOf("@");
+  if (atIndex <= 0 || atIndex === entry.length - 1) {
+    return null;
+  }
+  return normalizeInstalledVersion(entry.slice(atIndex + 1));
 }
 
 function getDependencyTypeAndCurrentRange(
@@ -442,7 +733,8 @@ async function buildCandidatesFromWorkspaces(
         currentRange,
         installedVersion: installedVersionLookup(
           packageFileRelative,
-          packageName
+          packageName,
+          currentRange
         ),
         suggestedRange,
         targetVersion: targetVersions.get(packageName) ?? null,
@@ -471,7 +763,11 @@ async function buildCandidatesFromRoot(
       dependencyType,
       packageName,
       currentRange,
-      installedVersion: installedVersionLookup("package.json", packageName),
+      installedVersion: installedVersionLookup(
+        "package.json",
+        packageName,
+        currentRange
+      ),
       suggestedRange,
       targetVersion: targetVersions.get(packageName) ?? null,
     };
