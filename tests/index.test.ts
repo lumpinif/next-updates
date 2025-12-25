@@ -23,15 +23,19 @@ test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
         packageFile: "package.json",
         dependencyType: "dependencies",
         packageName: "lodash",
-        currentSpec: "^4.17.0",
-        upgradedSpec: "^4.18.0",
+        currentRange: "^4.17.0",
+        suggestedRange: "^4.18.0",
+        installedVersion: "4.17.21",
+        targetVersion: "4.18.0",
       },
       {
         packageFile: "packages/a/package.json",
         dependencyType: "devDependencies",
         packageName: "vitest",
-        currentSpec: "^0.1.0",
-        upgradedSpec: "^1.0.0",
+        currentRange: "^0.1.0",
+        suggestedRange: "^1.0.0",
+        installedVersion: "0.1.0",
+        targetVersion: "1.0.0",
       },
     ],
   });
@@ -41,6 +45,8 @@ test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
   expect(markdown).toContain("## packages/a/package.json");
   expect(markdown).toContain("`lodash`");
   expect(markdown).toContain("`vitest` (dev)");
+  expect(markdown).toContain("installed: `4.17.21`");
+  expect(markdown).toContain("target: `4.18.0`");
 });
 
 test("writeNextUpdatesReportJson writes to provided filename", async () => {

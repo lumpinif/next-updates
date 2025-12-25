@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { run as ncuRun, type RunOptions } from "npm-check-updates";
+import { parse as parseYaml } from "yaml";
 
 import type {
   NextUpdatesDep,
@@ -13,8 +14,10 @@ export type NextUpdatesCandidate = {
   packageFile: string;
   dependencyType: "dependencies" | "devDependencies" | "unknown";
   packageName: string;
-  currentSpec: string;
-  upgradedSpec: string;
+  currentRange: string;
+  installedVersion: string | null;
+  suggestedRange: string;
+  targetVersion: string | null;
 };
 
 export type NextUpdatesReport = {
@@ -33,6 +36,31 @@ type PackageJson = {
   devDependencies?: Record<string, string>;
   workspaces?: unknown;
 };
+
+type PnpmDependencyEntry = { version?: string } | string;
+
+type PnpmImporter = {
+  dependencies?: Record<string, PnpmDependencyEntry>;
+  devDependencies?: Record<string, PnpmDependencyEntry>;
+  optionalDependencies?: Record<string, PnpmDependencyEntry>;
+  peerDependencies?: Record<string, PnpmDependencyEntry>;
+};
+
+type PnpmLockfile = {
+  importers?: Record<string, PnpmImporter>;
+};
+
+type PackageLock = {
+  packages?: Record<string, { version?: string }>;
+  dependencies?: Record<string, { version?: string }>;
+};
+
+type InstalledVersionLookup = (
+  packageFile: string,
+  packageName: string
+) => string | null;
+
+type FilterResults = NonNullable<RunOptions["filterResults"]>;
 
 function hasWorkspacesField(packageJson: PackageJson): boolean {
   return packageJson.workspaces !== undefined;
@@ -74,6 +102,21 @@ function createRunOptions(
   return runOptions;
 }
 
+function createTargetVersionCollector(): {
+  targetVersions: Map<string, string>;
+  filterResults: FilterResults;
+} {
+  const targetVersions = new Map<string, string>();
+  const filterResults: FilterResults = (packageName, metadata) => {
+    if (typeof metadata.upgradedVersion === "string") {
+      targetVersions.set(packageName, metadata.upgradedVersion);
+    }
+    return true;
+  };
+
+  return { targetVersions, filterResults };
+}
+
 function resolveScopeEffective(
   scopeRequested: NextUpdatesScope,
   workspacesAvailable: boolean
@@ -93,24 +136,168 @@ async function readPackageJson(packageFile: string): Promise<PackageJson> {
   return parsed as PackageJson;
 }
 
-function getDependencyTypeAndCurrentSpec(
+async function createInstalledVersionLookup(
+  cwd: string
+): Promise<InstalledVersionLookup> {
+  const lockfile = await findLockfile(cwd);
+  if (lockfile?.type === "pnpm") {
+    return createPnpmInstalledVersionLookup(lockfile.path);
+  }
+  if (lockfile?.type === "npm") {
+    return createNpmInstalledVersionLookup(lockfile.path);
+  }
+  return () => null;
+}
+
+async function findLockfile(
+  cwd: string
+): Promise<{ type: "pnpm" | "npm"; path: string } | null> {
+  const candidates: { type: "pnpm" | "npm"; path: string }[] = [
+    { type: "pnpm", path: path.resolve(cwd, "pnpm-lock.yaml") },
+    { type: "npm", path: path.resolve(cwd, "package-lock.json") },
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate.path);
+      return candidate;
+    } catch {
+      // Ignore missing lockfile candidates.
+    }
+  }
+
+  return null;
+}
+
+async function createPnpmInstalledVersionLookup(
+  lockfilePath: string
+): Promise<InstalledVersionLookup> {
+  try {
+    const raw = await fs.readFile(lockfilePath, "utf8");
+    const parsed: unknown = parseYaml(raw);
+    if (!isRecord(parsed)) {
+      return () => null;
+    }
+
+    const lockfile = parsed as PnpmLockfile;
+    if (!isRecord(lockfile.importers)) {
+      return () => null;
+    }
+
+    const importers = lockfile.importers as Record<string, PnpmImporter>;
+    return (packageFile, packageName) => {
+      const importerKey = packageFileToImporterKey(packageFile);
+      const importer = importers[importerKey];
+      if (!importer) {
+        return null;
+      }
+      return getPnpmImporterVersion(importer, packageName);
+    };
+  } catch {
+    return () => null;
+  }
+}
+
+function packageFileToImporterKey(packageFile: string): string {
+  if (packageFile === "package.json") {
+    return ".";
+  }
+  const normalized = packageFile.split(path.sep).join("/");
+  const dir = path.posix.dirname(normalized);
+  return dir === "." ? "." : dir;
+}
+
+function getPnpmImporterVersion(
+  importer: PnpmImporter,
+  packageName: string
+): string | null {
+  return (
+    getPnpmVersionEntry(importer.dependencies?.[packageName]) ??
+    getPnpmVersionEntry(importer.devDependencies?.[packageName]) ??
+    getPnpmVersionEntry(importer.optionalDependencies?.[packageName]) ??
+    getPnpmVersionEntry(importer.peerDependencies?.[packageName])
+  );
+}
+
+function normalizeInstalledVersion(value: string): string {
+  const parenIndex = value.indexOf("(");
+  if (parenIndex === -1) {
+    return value;
+  }
+  return value.slice(0, parenIndex).trim();
+}
+
+function getPnpmVersionEntry(
+  entry: PnpmDependencyEntry | undefined
+): string | null {
+  if (typeof entry === "string") {
+    return normalizeInstalledVersion(entry);
+  }
+  if (entry && typeof entry.version === "string") {
+    return normalizeInstalledVersion(entry.version);
+  }
+  return null;
+}
+
+async function createNpmInstalledVersionLookup(
+  lockfilePath: string
+): Promise<InstalledVersionLookup> {
+  try {
+    const raw = await fs.readFile(lockfilePath, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return () => null;
+    }
+
+    const lockfile = parsed as PackageLock;
+    const packages = isRecord(lockfile.packages)
+      ? (lockfile.packages as Record<string, { version?: string }>)
+      : null;
+    const dependencies = isRecord(lockfile.dependencies)
+      ? (lockfile.dependencies as Record<string, { version?: string }>)
+      : null;
+
+    return (_packageFile, packageName) => {
+      if (packages) {
+        const key = path.posix.join("node_modules", packageName);
+        const entry = packages[key];
+        if (entry && typeof entry.version === "string") {
+          return normalizeInstalledVersion(entry.version);
+        }
+      }
+
+      if (dependencies) {
+        const entry = dependencies[packageName];
+        if (entry && typeof entry.version === "string") {
+          return normalizeInstalledVersion(entry.version);
+        }
+      }
+
+      return null;
+    };
+  } catch {
+    return () => null;
+  }
+}
+
+function getDependencyTypeAndCurrentRange(
   packageJson: PackageJson,
   packageName: string
 ): {
   dependencyType: NextUpdatesCandidate["dependencyType"];
-  currentSpec: string;
+  currentRange: string;
 } {
   const fromDeps = packageJson.dependencies?.[packageName];
   if (typeof fromDeps === "string") {
-    return { dependencyType: "dependencies", currentSpec: fromDeps };
+    return { dependencyType: "dependencies", currentRange: fromDeps };
   }
 
   const fromDevDeps = packageJson.devDependencies?.[packageName];
   if (typeof fromDevDeps === "string") {
-    return { dependencyType: "devDependencies", currentSpec: fromDevDeps };
+    return { dependencyType: "devDependencies", currentRange: fromDevDeps };
   }
 
-  return { dependencyType: "unknown", currentSpec: "" };
+  return { dependencyType: "unknown", currentRange: "" };
 }
 
 type NcuUpgradedFlat = Record<string, string>;
@@ -166,11 +353,11 @@ function coerceWorkspaces(entries: [string, unknown][]): NcuUpgradedWorkspaces {
 
 function coerceFlat(entries: [string, unknown][]): NcuUpgradedFlat {
   const flat: NcuUpgradedFlat = {};
-  for (const [packageName, upgradedSpec] of entries) {
-    if (typeof upgradedSpec !== "string") {
+  for (const [packageName, suggestedRange] of entries) {
+    if (typeof suggestedRange !== "string") {
       throw new Error("Invalid upgraded dependencies found");
     }
-    flat[packageName] = upgradedSpec;
+    flat[packageName] = suggestedRange;
   }
   return flat;
 }
@@ -192,7 +379,7 @@ function isWorkspacesResult(result: unknown): result is NcuUpgradedWorkspaces {
 type NormalizedNcuCandidate = {
   packageFile: string;
   packageName: string;
-  upgradedSpec: string;
+  suggestedRange: string;
 };
 
 function normalizeNcuResult(upgraded: NcuUpgraded): NormalizedNcuCandidate[] {
@@ -203,21 +390,21 @@ function normalizeNcuResult(upgraded: NcuUpgraded): NormalizedNcuCandidate[] {
   if (isWorkspacesResult(upgraded)) {
     const normalized: NormalizedNcuCandidate[] = [];
     for (const [packageFile, upgrades] of Object.entries(upgraded)) {
-      for (const [packageName, upgradedSpec] of Object.entries(upgrades)) {
+      for (const [packageName, suggestedRange] of Object.entries(upgrades)) {
         normalized.push({
           packageFile,
           packageName,
-          upgradedSpec,
+          suggestedRange,
         });
       }
     }
     return normalized;
   }
 
-  return Object.entries(upgraded).map(([packageName, upgradedSpec]) => ({
+  return Object.entries(upgraded).map(([packageName, suggestedRange]) => ({
     packageFile: "package.json",
     packageName,
-    upgradedSpec,
+    suggestedRange,
   }));
 }
 
@@ -233,15 +420,17 @@ async function writeDebugDump(
 
 async function buildCandidatesFromWorkspaces(
   cwd: string,
-  upgraded: NcuUpgradedWorkspaces
+  upgraded: NcuUpgradedWorkspaces,
+  installedVersionLookup: InstalledVersionLookup,
+  targetVersions: Map<string, string>
 ): Promise<NextUpdatesCandidate[]> {
   const candidates: NextUpdatesCandidate[] = [];
   for (const [packageFileRelative, upgradedMap] of Object.entries(upgraded)) {
     const packageFile = path.resolve(cwd, packageFileRelative);
     const packageJson = await readPackageJson(packageFile);
 
-    for (const [packageName, upgradedSpec] of Object.entries(upgradedMap)) {
-      const { dependencyType, currentSpec } = getDependencyTypeAndCurrentSpec(
+    for (const [packageName, suggestedRange] of Object.entries(upgradedMap)) {
+      const { dependencyType, currentRange } = getDependencyTypeAndCurrentRange(
         packageJson,
         packageName
       );
@@ -250,8 +439,13 @@ async function buildCandidatesFromWorkspaces(
         packageFile: packageFileRelative,
         dependencyType,
         packageName,
-        currentSpec,
-        upgradedSpec,
+        currentRange,
+        installedVersion: installedVersionLookup(
+          packageFileRelative,
+          packageName
+        ),
+        suggestedRange,
+        targetVersion: targetVersions.get(packageName) ?? null,
       });
     }
   }
@@ -260,12 +454,14 @@ async function buildCandidatesFromWorkspaces(
 
 async function buildCandidatesFromRoot(
   cwd: string,
-  upgraded: NcuUpgradedFlat
+  upgraded: NcuUpgradedFlat,
+  installedVersionLookup: InstalledVersionLookup,
+  targetVersions: Map<string, string>
 ): Promise<NextUpdatesCandidate[]> {
   const packageFile = path.resolve(cwd, "package.json");
   const packageJson = await readPackageJson(packageFile);
-  return Object.entries(upgraded).map(([packageName, upgradedSpec]) => {
-    const { dependencyType, currentSpec } = getDependencyTypeAndCurrentSpec(
+  return Object.entries(upgraded).map(([packageName, suggestedRange]) => {
+    const { dependencyType, currentRange } = getDependencyTypeAndCurrentRange(
       packageJson,
       packageName
     );
@@ -274,25 +470,39 @@ async function buildCandidatesFromRoot(
       packageFile: "package.json",
       dependencyType,
       packageName,
-      currentSpec,
-      upgradedSpec,
+      currentRange,
+      installedVersion: installedVersionLookup("package.json", packageName),
+      suggestedRange,
+      targetVersion: targetVersions.get(packageName) ?? null,
     };
   });
 }
 
 function buildCandidates(
   cwd: string,
-  upgraded: NcuUpgraded
+  upgraded: NcuUpgraded,
+  installedVersionLookup: InstalledVersionLookup,
+  targetVersions: Map<string, string>
 ): Promise<NextUpdatesCandidate[]> {
   if (upgraded === undefined) {
     return Promise.resolve([]);
   }
 
   if (isWorkspacesResult(upgraded)) {
-    return buildCandidatesFromWorkspaces(cwd, upgraded);
+    return buildCandidatesFromWorkspaces(
+      cwd,
+      upgraded,
+      installedVersionLookup,
+      targetVersions
+    );
   }
 
-  return buildCandidatesFromRoot(cwd, upgraded);
+  return buildCandidatesFromRoot(
+    cwd,
+    upgraded,
+    installedVersionLookup,
+    targetVersions
+  );
 }
 
 function sortCandidates(candidates: NextUpdatesCandidate[]): void {
@@ -322,12 +532,18 @@ export async function collectNextUpdatesReport(options: {
     workspacesAvailable
   );
 
+  const installedVersionLookup = await createInstalledVersionLookup(
+    options.cwd
+  );
+  const { targetVersions, filterResults } = createTargetVersionCollector();
+
   const runOptions = createRunOptions(
     options.cwd,
     scopeEffective,
     options.target,
     options.dep
   );
+  runOptions.filterResults = filterResults;
 
   const upgradedRaw = await ncuRun(runOptions);
   const upgraded = coerceNcuUpgraded(upgradedRaw);
@@ -344,7 +560,12 @@ export async function collectNextUpdatesReport(options: {
       normalized
     );
   }
-  const candidates = await buildCandidates(options.cwd, upgraded);
+  const candidates = await buildCandidates(
+    options.cwd,
+    upgraded,
+    installedVersionLookup,
+    targetVersions
+  );
   sortCandidates(candidates);
   if (options.debugDumpDir) {
     await writeDebugDump(
@@ -417,14 +638,16 @@ function groupCandidatesByPackageFile(
 
 function formatCandidateLine(candidate: NextUpdatesCandidate): string {
   const current =
-    candidate.currentSpec === "" ? "<unknown>" : candidate.currentSpec;
+    candidate.currentRange === "" ? "<unknown>" : candidate.currentRange;
+  const installed = candidate.installedVersion ?? "<unknown>";
+  const target = candidate.targetVersion ?? "<unknown>";
 
   let typeSuffix = "";
   if (candidate.dependencyType === "devDependencies") {
     typeSuffix = " (dev)";
   }
 
-  return `- \`${candidate.packageName}\`${typeSuffix}: \`${current}\` → \`${candidate.upgradedSpec}\``;
+  return `- \`${candidate.packageName}\`${typeSuffix}: \`${current}\` → \`${candidate.suggestedRange}\` (installed: \`${installed}\`, target: \`${target}\`)`;
 }
 
 export async function writeNextUpdatesReportJson(options: {

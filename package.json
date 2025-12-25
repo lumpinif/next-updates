@@ -53,6 +53,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
-    "npm-check-updates": "^19.2.0"
+    "npm-check-updates": "^19.2.0",
+    "yaml": "^2.8.2"
   }
 }
