@@ -4,21 +4,62 @@ import path from "node:path";
 import { run as ncuRun, type RunOptions } from "npm-check-updates";
 import { parse as parseYaml } from "yaml";
 
+import {
+  collectCandidateEvidence,
+  type NextUpdatesEvidence,
+  type NextUpdatesVersionWindow,
+} from "../evidence";
 import type {
   NextUpdatesDep,
   NextUpdatesScope,
   NextUpdatesTarget,
 } from "../prompts/next-updates";
 
-export type NextUpdatesCandidate = {
+export type NextUpdatesVersionSpec = {
+  range: string;
+  version: string | null;
+};
+
+export type NextUpdatesCandidateBase = {
   packageFile: string;
   dependencyType: "dependencies" | "devDependencies" | "unknown";
   packageName: string;
-  currentRange: string;
-  installedVersion: string | null;
-  suggestedRange: string;
-  targetVersion: string | null;
+  current: NextUpdatesVersionSpec;
+  target: NextUpdatesVersionSpec;
 };
+
+export type NextUpdatesCandidate = NextUpdatesCandidateBase & {
+  versionWindow: NextUpdatesVersionWindow;
+  evidence: NextUpdatesEvidence | null;
+};
+
+export type NextUpdatesPackageDetails = {
+  current: NextUpdatesVersionSpec;
+  target: NextUpdatesVersionSpec;
+  versionWindow: NextUpdatesVersionWindow;
+  evidence: NextUpdatesEvidence | null;
+};
+
+export type NextUpdatesPackageGroups = {
+  dependencies?: Record<string, NextUpdatesPackageDetails>;
+  devDependencies?: Record<string, NextUpdatesPackageDetails>;
+  unknown?: Record<string, NextUpdatesPackageDetails>;
+};
+
+export type NextUpdatesPackages = Record<string, NextUpdatesPackageGroups>;
+
+type NextUpdatesPackageDetailsBase = Omit<
+  NextUpdatesPackageDetails,
+  "versionWindow" | "evidence"
+>;
+
+type NextUpdatesPackageGroupsBase = {
+  dependencies?: Record<string, NextUpdatesPackageDetailsBase>;
+  devDependencies?: Record<string, NextUpdatesPackageDetailsBase>;
+  unknown?: Record<string, NextUpdatesPackageDetailsBase>;
+};
+
+type NextUpdatesPackagesBase = Record<string, NextUpdatesPackageGroupsBase>;
 
 export type NextUpdatesReport = {
   generatedAt: string;
@@ -28,7 +69,7 @@ export type NextUpdatesReport = {
     target: NextUpdatesTarget;
     dep: NextUpdatesDep;
   };
-  candidates: NextUpdatesCandidate[];
+  packages: NextUpdatesPackages;
 };
 
 type PackageJson = {
@@ -79,6 +120,11 @@ type YarnInstalledIndex = Map<string, YarnDescriptorVersion[]>;
 const yarnClassicVersionRegex = /^version\s+["'](.+)["']/;
 const bunTrailingCommaRegex = /,\s*([}\]])/g;
 const lineBreakRegex = /\r?\n/;
+const dependencyTypeOrder: NextUpdatesCandidateBase["dependencyType"][] = [
+  "dependencies",
+  "devDependencies",
+  "unknown",
+];
 
 function hasWorkspacesField(packageJson: PackageJson): boolean {
   return packageJson.workspaces !== undefined;
@@ -575,7 +621,7 @@ function getDependencyTypeAndCurrentRange(
   packageJson: PackageJson,
   packageName: string
 ): {
-  dependencyType: NextUpdatesCandidate["dependencyType"];
+  dependencyType: NextUpdatesCandidateBase["dependencyType"];
   currentRange: string;
 } {
   const fromDeps = packageJson.dependencies?.[packageName];
@@ -714,8 +760,8 @@ async function buildCandidatesFromWorkspaces(
   upgraded: NcuUpgradedWorkspaces,
   installedVersionLookup: InstalledVersionLookup,
   targetVersions: Map<string, string>
-): Promise<NextUpdatesCandidate[]> {
-  const candidates: NextUpdatesCandidate[] = [];
+): Promise<NextUpdatesCandidateBase[]> {
+  const candidates: NextUpdatesCandidateBase[] = [];
   for (const [packageFileRelative, upgradedMap] of Object.entries(upgraded)) {
     const packageFile = path.resolve(cwd, packageFileRelative);
     const packageJson = await readPackageJson(packageFile);
@@ -725,19 +771,24 @@ async function buildCandidatesFromWorkspaces(
         packageJson,
         packageName
       );
+      const installedVersion = installedVersionLookup(
+        packageFileRelative,
+        packageName,
+        currentRange
+      );
 
       candidates.push({
         packageFile: packageFileRelative,
         dependencyType,
         packageName,
-        currentRange,
-        installedVersion: installedVersionLookup(
-          packageFileRelative,
-          packageName,
-          currentRange
-        ),
-        suggestedRange,
-        targetVersion: targetVersions.get(packageName) ?? null,
+        current: {
+          range: currentRange,
+          version: installedVersion,
+        },
+        target: {
+          range: suggestedRange,
+          version: targetVersions.get(packageName) ?? null,
+        },
       });
     }
   }
@@ -749,7 +800,7 @@ async function buildCandidatesFromRoot(
   upgraded: NcuUpgradedFlat,
   installedVersionLookup: InstalledVersionLookup,
   targetVersions: Map<string, string>
-): Promise<NextUpdatesCandidate[]> {
+): Promise<NextUpdatesCandidateBase[]> {
   const packageFile = path.resolve(cwd, "package.json");
   const packageJson = await readPackageJson(packageFile);
   return Object.entries(upgraded).map(([packageName, suggestedRange]) => {
@@ -757,19 +808,24 @@ async function buildCandidatesFromRoot(
       packageJson,
       packageName
     );
+    const installedVersion = installedVersionLookup(
+      "package.json",
+      packageName,
+      currentRange
+    );
 
     return {
       packageFile: "package.json",
       dependencyType,
       packageName,
-      currentRange,
-      installedVersion: installedVersionLookup(
-        "package.json",
-        packageName,
-        currentRange
-      ),
-      suggestedRange,
-      targetVersion: targetVersions.get(packageName) ?? null,
+      current: {
+        range: currentRange,
+        version: installedVersion,
+      },
+      target: {
+        range: suggestedRange,
+        version: targetVersions.get(packageName) ?? null,
+      },
     };
   });
 }
@@ -779,7 +835,7 @@ function buildCandidates(
   upgraded: NcuUpgraded,
   installedVersionLookup: InstalledVersionLookup,
   targetVersions: Map<string, string>
-): Promise<NextUpdatesCandidate[]> {
+): Promise<NextUpdatesCandidateBase[]> {
   if (upgraded === undefined) {
     return Promise.resolve([]);
   }
@@ -801,13 +857,61 @@ function buildCandidates(
   );
 }
 
-function sortCandidates(candidates: NextUpdatesCandidate[]): void {
+function sortCandidates<T extends NextUpdatesCandidateBase>(
+  candidates: T[]
+): void {
   candidates.sort((a, b) => {
     if (a.packageFile !== b.packageFile) {
       return a.packageFile.localeCompare(b.packageFile);
     }
+    if (a.dependencyType !== b.dependencyType) {
+      return (
+        dependencyTypeOrder.indexOf(a.dependencyType) -
+        dependencyTypeOrder.indexOf(b.dependencyType)
+      );
+    }
     return a.packageName.localeCompare(b.packageName);
   });
+}
+
+function buildPackagesFromBaseCandidates(
+  candidates: readonly NextUpdatesCandidateBase[]
+): NextUpdatesPackagesBase {
+  const packages: NextUpdatesPackagesBase = {};
+  for (const candidate of candidates) {
+    const fileGroup = packages[candidate.packageFile] ?? {};
+    const depGroup = fileGroup[candidate.dependencyType] ?? {};
+
+    depGroup[candidate.packageName] = {
+      current: candidate.current,
+      target: candidate.target,
+    };
+
+    fileGroup[candidate.dependencyType] = depGroup;
+    packages[candidate.packageFile] = fileGroup;
+  }
+  return packages;
+}
+
+function buildPackagesFromCandidates(
+  candidates: readonly NextUpdatesCandidate[]
+): NextUpdatesPackages {
+  const packages: NextUpdatesPackages = {};
+  for (const candidate of candidates) {
+    const fileGroup = packages[candidate.packageFile] ?? {};
+    const depGroup = fileGroup[candidate.dependencyType] ?? {};
+
+    depGroup[candidate.packageName] = {
+      current: candidate.current,
+      target: candidate.target,
+      versionWindow: candidate.versionWindow,
+      evidence: candidate.evidence,
+    };
+
+    fileGroup[candidate.dependencyType] = depGroup;
+    packages[candidate.packageFile] = fileGroup;
+  }
+  return packages;
 }
 
 export async function collectNextUpdatesReport(options: {
@@ -864,10 +968,31 @@ export async function collectNextUpdatesReport(options: {
   );
   sortCandidates(candidates);
   if (options.debugDumpDir) {
+    const packagesWithCurrent = buildPackagesFromBaseCandidates(candidates);
     await writeDebugDump(
       options.debugDumpDir,
       "02-candidates-with-current.json",
-      candidates
+      packagesWithCurrent
+    );
+  }
+
+  const evidenceResults = await collectCandidateEvidence(
+    candidates.map((candidate) => ({
+      packageName: candidate.packageName,
+      installedVersion: candidate.current.version,
+      targetVersion: candidate.target.version,
+    }))
+  );
+  const candidatesWithEvidence = candidates.map((candidate, index) => ({
+    ...candidate,
+    ...evidenceResults[index],
+  }));
+  const packages = buildPackagesFromCandidates(candidatesWithEvidence);
+  if (options.debugDumpDir) {
+    await writeDebugDump(
+      options.debugDumpDir,
+      "03-candidates-with-evidence.json",
+      packages
     );
   }
 
@@ -879,7 +1004,7 @@ export async function collectNextUpdatesReport(options: {
       target: options.target,
       dep: options.dep,
     },
-    candidates,
+    packages,
   };
 }
 
@@ -900,16 +1025,25 @@ export function formatNextUpdatesPromptMarkdown(
     "",
   ];
 
-  if (report.candidates.length === 0) {
+  if (!hasPackages(report.packages)) {
     lines.push("No updates found.");
     return `${lines.join("\n")}\n`;
   }
 
-  const grouped = groupCandidatesByPackageFile(report.candidates);
-  for (const [packageFile, list] of grouped) {
+  const packageFiles = Object.keys(report.packages).sort();
+  for (const packageFile of packageFiles) {
+    const fileGroup = report.packages[packageFile];
     lines.push(`## ${packageFile}`, "");
-    for (const item of list) {
-      lines.push(formatCandidateLine(item));
+    for (const dependencyType of dependencyTypeOrder) {
+      const depGroup = fileGroup[dependencyType];
+      if (!depGroup) {
+        continue;
+      }
+      const packageNames = Object.keys(depGroup).sort();
+      for (const packageName of packageNames) {
+        const details = depGroup[packageName];
+        lines.push(formatPackageLine(packageName, dependencyType, details));
+      }
     }
     lines.push("");
   }
@@ -917,33 +1051,36 @@ export function formatNextUpdatesPromptMarkdown(
   return `${lines.join("\n")}\n`;
 }
 
-function groupCandidatesByPackageFile(
-  candidates: readonly NextUpdatesCandidate[]
-): Map<string, NextUpdatesCandidate[]> {
-  const grouped = new Map<string, NextUpdatesCandidate[]>();
-  for (const candidate of candidates) {
-    const list = grouped.get(candidate.packageFile);
-    if (list === undefined) {
-      grouped.set(candidate.packageFile, [candidate]);
-      continue;
+function hasPackages(packages: NextUpdatesPackages): boolean {
+  for (const fileGroup of Object.values(packages)) {
+    for (const dependencyType of dependencyTypeOrder) {
+      const depGroup = fileGroup[dependencyType];
+      if (depGroup && Object.keys(depGroup).length > 0) {
+        return true;
+      }
     }
-    list.push(candidate);
   }
-  return grouped;
+  return false;
 }
 
-function formatCandidateLine(candidate: NextUpdatesCandidate): string {
-  const current =
-    candidate.currentRange === "" ? "<unknown>" : candidate.currentRange;
-  const installed = candidate.installedVersion ?? "<unknown>";
-  const target = candidate.targetVersion ?? "<unknown>";
+function formatPackageLine(
+  packageName: string,
+  dependencyType: NextUpdatesCandidateBase["dependencyType"],
+  details: NextUpdatesPackageDetails
+): string {
+  const currentRange =
+    details.current.range === "" ? "<unknown>" : details.current.range;
+  const installed = details.current.version ?? "<unknown>";
+  const targetRange =
+    details.target.range === "" ? "<unknown>" : details.target.range;
+  const targetVersion = details.target.version ?? "<unknown>";
 
   let typeSuffix = "";
-  if (candidate.dependencyType === "devDependencies") {
+  if (dependencyType === "devDependencies") {
     typeSuffix = " (dev)";
   }
 
-  return `- \`${candidate.packageName}\`${typeSuffix}: \`${current}\` → \`${candidate.suggestedRange}\` (installed: \`${installed}\`, target: \`${target}\`)`;
+  return `- \`${packageName}\`${typeSuffix}: \`${currentRange}\` → \`${targetRange}\` (installed: \`${installed}\`, target: \`${targetVersion}\`)`;
 }
 
 export async function writeNextUpdatesReportJson(options: {

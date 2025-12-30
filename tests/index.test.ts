@@ -18,26 +18,44 @@ test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
       target: "latest",
       dep: "all",
     },
-    candidates: [
-      {
-        packageFile: "package.json",
-        dependencyType: "dependencies",
-        packageName: "lodash",
-        currentRange: "^4.17.0",
-        suggestedRange: "^4.18.0",
-        installedVersion: "4.17.21",
-        targetVersion: "4.18.0",
+    packages: {
+      "package.json": {
+        dependencies: {
+          lodash: {
+            current: {
+              range: "^4.17.0",
+              version: "4.17.21",
+            },
+            target: {
+              range: "^4.18.0",
+              version: "4.18.0",
+            },
+            versionWindow: {
+              delta: { major: 0, minor: 0, patch: 0, prerelease: 0 },
+            },
+            evidence: null,
+          },
+        },
       },
-      {
-        packageFile: "packages/a/package.json",
-        dependencyType: "devDependencies",
-        packageName: "vitest",
-        currentRange: "^0.1.0",
-        suggestedRange: "^1.0.0",
-        installedVersion: "0.1.0",
-        targetVersion: "1.0.0",
+      "packages/a/package.json": {
+        devDependencies: {
+          vitest: {
+            current: {
+              range: "^0.1.0",
+              version: "0.1.0",
+            },
+            target: {
+              range: "^1.0.0",
+              version: "1.0.0",
+            },
+            versionWindow: {
+              delta: { major: 0, minor: 0, patch: 0, prerelease: 0 },
+            },
+            evidence: null,
+          },
+        },
       },
-    ],
+    },
   });
 
   expect(markdown).toContain("# next-updates (P0)");
@@ -62,7 +80,7 @@ test("writeNextUpdatesReportJson writes to provided filename", async () => {
         target: "latest",
         dep: "dependencies",
       },
-      candidates: [],
+      packages: {},
     },
   });
 
