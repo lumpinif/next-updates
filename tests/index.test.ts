@@ -17,6 +17,7 @@ test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
       scopeEffective: "all",
       target: "latest",
       dep: "all",
+      risk: "all",
     },
     packages: {
       "package.json": {
@@ -65,6 +66,7 @@ test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
   expect(markdown).toContain("`vitest` (dev)");
   expect(markdown).toContain("installed: `4.17.21`");
   expect(markdown).toContain("target: `4.18.0`");
+  expect(markdown).toContain("- Risk: all");
 });
 
 test("writeNextUpdatesReportJson writes to provided filename", async () => {
@@ -79,6 +81,7 @@ test("writeNextUpdatesReportJson writes to provided filename", async () => {
         scopeEffective: "root",
         target: "latest",
         dep: "dependencies",
+        risk: "all",
       },
       packages: {},
     },

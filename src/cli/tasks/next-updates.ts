@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { run as ncuRun, type RunOptions } from "npm-check-updates";
+import { compare, parse } from "semver";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -11,6 +12,7 @@ import {
 } from "../evidence";
 import type {
   NextUpdatesDep,
+  NextUpdatesRisk,
   NextUpdatesScope,
   NextUpdatesTarget,
 } from "../prompts/next-updates";
@@ -68,6 +70,7 @@ export type NextUpdatesReport = {
     scopeEffective: NextUpdatesScope;
     target: NextUpdatesTarget;
     dep: NextUpdatesDep;
+    risk: NextUpdatesRisk;
   };
   packages: NextUpdatesPackages;
 };
@@ -116,6 +119,14 @@ type YarnDescriptorVersion = {
 };
 
 type YarnInstalledIndex = Map<string, YarnDescriptorVersion[]>;
+
+type RiskGroup =
+  | "major"
+  | "minor"
+  | "patch"
+  | "prerelease"
+  | "none"
+  | "unknown";
 
 const yarnClassicVersionRegex = /^version\s+["'](.+)["']/;
 const bunTrailingCommaRegex = /,\s*([}\]])/g;
@@ -874,6 +885,79 @@ function sortCandidates<T extends NextUpdatesCandidateBase>(
   });
 }
 
+function classifyRiskGroup(
+  currentVersion: string | null,
+  targetVersion: string | null
+): RiskGroup {
+  if (!(currentVersion && targetVersion)) {
+    return "unknown";
+  }
+
+  const current = parse(currentVersion);
+  const target = parse(targetVersion);
+  if (!(current && target)) {
+    return "unknown";
+  }
+
+  const comparison = compare(current, target);
+  if (comparison === 0) {
+    return "none";
+  }
+  if (comparison > 0) {
+    return "unknown";
+  }
+
+  if (target.prerelease.length > 0) {
+    return "prerelease";
+  }
+
+  if (target.major > current.major) {
+    return "major";
+  }
+  if (target.minor > current.minor) {
+    return "minor";
+  }
+  if (target.patch > current.patch) {
+    return "patch";
+  }
+
+  return "none";
+}
+
+function matchesRiskFilter(risk: NextUpdatesRisk, group: RiskGroup): boolean {
+  switch (risk) {
+    case "all":
+      return true;
+    case "major-only":
+      return group === "major";
+    case "non-major":
+      return group === "minor" || group === "patch" || group === "none";
+    case "prerelease-only":
+      return group === "prerelease";
+    case "unknown-only":
+      return group === "unknown";
+    default:
+      return true;
+  }
+}
+
+function applyRiskFilter<T extends NextUpdatesCandidateBase>(
+  candidates: readonly T[],
+  risk: NextUpdatesRisk
+): T[] {
+  if (risk === "all") {
+    return [...candidates];
+  }
+
+  return candidates.filter((candidate) => {
+    const group = classifyRiskGroup(
+      candidate.current.version,
+      candidate.target.version
+    );
+    return matchesRiskFilter(risk, group);
+  });
+}
+
 function buildPackagesFromBaseCandidates(
   candidates: readonly NextUpdatesCandidateBase[]
 ): NextUpdatesPackagesBase {
@@ -919,6 +1003,7 @@ export async function collectNextUpdatesReport(options: {
   scope: NextUpdatesScope;
   target: NextUpdatesTarget;
   dep: NextUpdatesDep;
+  risk: NextUpdatesRisk;
   debugDumpDir?: string;
 }): Promise<NextUpdatesReport> {
   const generatedAt = new Date().toISOString();
@@ -967,8 +1052,10 @@ export async function collectNextUpdatesReport(options: {
     targetVersions
   );
   sortCandidates(candidates);
+  const filteredCandidates = applyRiskFilter(candidates, options.risk);
   if (options.debugDumpDir) {
-    const packagesWithCurrent = buildPackagesFromBaseCandidates(candidates);
+    const packagesWithCurrent =
+      buildPackagesFromBaseCandidates(filteredCandidates);
     await writeDebugDump(
       options.debugDumpDir,
       "02-candidates-with-current.json",
@@ -977,13 +1064,13 @@ export async function collectNextUpdatesReport(options: {
   }
 
   const evidenceResults = await collectCandidateEvidence(
-    candidates.map((candidate) => ({
+    filteredCandidates.map((candidate) => ({
       packageName: candidate.packageName,
       installedVersion: candidate.current.version,
       targetVersion: candidate.target.version,
     }))
   );
-  const candidatesWithEvidence = candidates.map((candidate, index) => ({
+  const candidatesWithEvidence = filteredCandidates.map((candidate, index) => ({
     ...candidate,
     ...evidenceResults[index],
   }));
@@ -1003,6 +1090,7 @@ export async function collectNextUpdatesReport(options: {
       scopeEffective,
       target: options.target,
       dep: options.dep,
+      risk: options.risk,
     },
     packages,
   };
@@ -1022,6 +1110,7 @@ export function formatNextUpdatesPromptMarkdown(
       : `- Scope: ${report.options.scopeRequested} (effective: ${report.options.scopeEffective})`,
     `- Target: ${report.options.target}`,
     `- Dep: ${report.options.dep}`,
+    `- Risk: ${report.options.risk}`,
     "",
   ];
 

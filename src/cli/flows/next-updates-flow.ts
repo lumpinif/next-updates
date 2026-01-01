@@ -50,6 +50,7 @@ export async function runNextUpdatesFlow(options: {
       scope: answers.scope,
       target: answers.target,
       dep: answers.dep,
+      risk: answers.risk,
       debugDumpDir,
     })
   );

@@ -3,12 +3,19 @@ import type { ClackUi } from "../ui/clack-ui";
 export type NextUpdatesScope = "all" | "root" | "workspaces";
 export type NextUpdatesTarget = "latest" | "minor" | "patch";
 export type NextUpdatesDep = "all" | "dependencies" | "devDependencies";
+export type NextUpdatesRisk =
+  | "all"
+  | "major-only"
+  | "non-major"
+  | "prerelease-only"
+  | "unknown-only";
 export type NextUpdatesOutput = "prompt" | "json";
 
 export type NextUpdatesPromptResult = {
   scope: NextUpdatesScope;
   target: NextUpdatesTarget;
   dep: NextUpdatesDep;
+  risk: NextUpdatesRisk;
   output: NextUpdatesOutput;
 };
 
@@ -88,6 +95,40 @@ export async function promptNextUpdates(
     return null;
   }
 
+  const risk =
+    defaults.risk ??
+    (await ui.selectOne<NextUpdatesRisk>("Risk filter", [
+      {
+        value: "all",
+        label: "all (default)",
+        hint: "No risk filtering",
+      },
+      {
+        value: "major-only",
+        label: "major-only",
+        hint: "Major bumps only",
+      },
+      {
+        value: "non-major",
+        label: "non-major (minor, patch, none)",
+        hint: "Exclude major and prerelease",
+      },
+      {
+        value: "prerelease-only",
+        label: "prerelease-only",
+        hint: "Target is prerelease",
+      },
+      {
+        value: "unknown-only",
+        label: "unknown-only",
+        hint: "Missing or invalid versions",
+      },
+    ]));
+
+  if (risk === null) {
+    return null;
+  }
+
   const output =
     defaults.output ??
     (await ui.selectOne<NextUpdatesOutput>("Output", [
@@ -111,6 +152,7 @@ export async function promptNextUpdates(
     scope,
     target,
     dep,
+    risk,
     output,
   };
 }
