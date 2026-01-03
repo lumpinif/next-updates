@@ -39,6 +39,16 @@ Local dev (this repository):
 - `pnpm build`
 - `node dist/bin.mjs`
 
+## Output (JSON)
+
+- `packages` groups by `package.json` path, then dependency type, then package name.
+- Each package includes `current` and `target` (range + version), `versionWindow.delta`, and `evidence.links`.
+- `evidence.links` is best-effort and only includes reachable entries.
+- `evidence.links.compare`: GitHub compare URL when tags resolve.
+- `evidence.links.npmDiffLink`: registry diff command.
+- `evidence.links.releases`: GitHub releases list.
+- `evidence.links.changelog`: raw changelog file.
+
 ## Docs
 
 - Product/tech design: `dev-spec/next-updates-prep.md`

@@ -361,7 +361,20 @@ async function resolveChangelogUrl(
     return null;
   }
 
-  const candidates = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "RELEASES.md"];
+  const candidates = [
+    "CHANGELOG.md",
+    "CHANGELOG",
+    "CHANGES.md",
+    "HISTORY.md",
+    "NEWS.md",
+    "RELEASES.md",
+    "docs/CHANGELOG.md",
+    "docs/CHANGES.md",
+    "docs/HISTORY.md",
+    "docs/NEWS.md",
+    "changelog.md",
+    "docs/changelog.md",
+  ];
 
   for (const candidate of candidates) {
     const url = `${rawBase}${candidate}`;
