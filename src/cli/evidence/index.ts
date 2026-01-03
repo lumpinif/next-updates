@@ -60,10 +60,16 @@ export function collectCandidateEvidence(
 ): Promise<CandidateEvidenceResult[]> {
   const registryCache = new Map<string, Promise<NpmRegistryPackage | null>>();
   const urlReachableCache = new Map<string, Promise<boolean>>();
+  const releasesCache = new Map<string, Promise<string | null>>();
 
   return Promise.all(
     inputs.map((input) =>
-      buildCandidateEvidence(input, registryCache, urlReachableCache)
+      buildCandidateEvidence(
+        input,
+        registryCache,
+        urlReachableCache,
+        releasesCache
+      )
     )
   );
 }
@@ -71,7 +77,8 @@ export function collectCandidateEvidence(
 async function buildCandidateEvidence(
   input: CandidateEvidenceInput,
   registryCache: Map<string, Promise<NpmRegistryPackage | null>>,
-  urlReachableCache: Map<string, Promise<boolean>>
+  urlReachableCache: Map<string, Promise<boolean>>,
+  releasesCache: Map<string, Promise<string | null>>
 ): Promise<CandidateEvidenceResult> {
   const npmDiffLink = buildNpmDiffLink(
     input.packageName,
@@ -81,7 +88,11 @@ async function buildCandidateEvidence(
 
   const registry = await getRegistryPackage(input.packageName, registryCache);
   const repositoryLinks = registry
-    ? await buildRepositoryEvidenceLinks(registry, urlReachableCache)
+    ? await buildRepositoryEvidenceLinks(
+        registry,
+        urlReachableCache,
+        releasesCache
+      )
     : {};
 
   const versionWindow =
@@ -324,14 +335,15 @@ function normalizeTagVersion(version: string): string | null {
 
 async function buildRepositoryEvidenceLinks(
   registry: NpmRegistryPackage,
-  urlReachableCache: Map<string, Promise<boolean>>
+  urlReachableCache: Map<string, Promise<boolean>>,
+  releasesCache: Map<string, Promise<string | null>>
 ): Promise<{ releases?: string; changelog?: string }> {
   const repositoryUrl = normalizeRepositoryUrl(registry.repository);
   if (!repositoryUrl) {
     return {};
   }
 
-  const releases = await resolveReleasesUrl(repositoryUrl, urlReachableCache);
+  const releases = await resolveReleasesUrl(repositoryUrl, releasesCache);
   const changelog = await resolveChangelogUrl(repositoryUrl, urlReachableCache);
 
   return {
@@ -340,16 +352,47 @@ async function buildRepositoryEvidenceLinks(
   };
 }
 
-async function resolveReleasesUrl(
+function resolveReleasesUrl(
   repositoryUrl: string,
-  urlReachableCache: Map<string, Promise<boolean>>
+  releasesCache: Map<string, Promise<string | null>>
+): Promise<string | null> {
+  const cached = releasesCache.get(repositoryUrl);
+  if (cached) {
+    return cached;
+  }
+
+  const resolvePromise = resolveReleasesUrlUncached(repositoryUrl);
+  releasesCache.set(repositoryUrl, resolvePromise);
+  return resolvePromise;
+}
+
+async function resolveReleasesUrlUncached(
+  repositoryUrl: string
 ): Promise<string | null> {
   const latestUrl = `${repositoryUrl}/releases/latest`;
-  const reachable = await isUrlReachable(latestUrl, urlReachableCache);
-  if (!reachable) {
+  try {
+    const response = await fetch(latestUrl, {
+      method: "HEAD",
+      redirect: "manual",
+    });
+    if (response.status < 300 || response.status >= 400) {
+      return null;
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      return null;
+    }
+    const resolved = resolveRedirectUrl(latestUrl, location);
+    if (!resolved) {
+      return null;
+    }
+    if (!resolved.includes("/releases/tag/")) {
+      return null;
+    }
+    return `${repositoryUrl}/releases`;
+  } catch {
     return null;
   }
-  return `${repositoryUrl}/releases`;
 }
 
 async function resolveChangelogUrl(
@@ -397,6 +440,14 @@ function buildRawGithubBaseUrl(repositoryUrl: string): string | null {
     return null;
   }
   return `https://raw.githubusercontent.com/${repoPath}/HEAD/`;
+}
+
+function resolveRedirectUrl(baseUrl: string, location: string): string | null {
+  try {
+    return new URL(location, baseUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 function buildCompareTagPairs(
