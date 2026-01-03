@@ -13,6 +13,8 @@ export type NextUpdatesEvidence = {
   links: {
     compare?: string;
     npmDiffLink?: string;
+    releases?: string;
+    changelog?: string;
   };
 };
 
@@ -57,11 +59,11 @@ export function collectCandidateEvidence(
   inputs: readonly CandidateEvidenceInput[]
 ): Promise<CandidateEvidenceResult[]> {
   const registryCache = new Map<string, Promise<NpmRegistryPackage | null>>();
-  const compareUrlCache = new Map<string, Promise<boolean>>();
+  const urlReachableCache = new Map<string, Promise<boolean>>();
 
   return Promise.all(
     inputs.map((input) =>
-      buildCandidateEvidence(input, registryCache, compareUrlCache)
+      buildCandidateEvidence(input, registryCache, urlReachableCache)
     )
   );
 }
@@ -69,7 +71,7 @@ export function collectCandidateEvidence(
 async function buildCandidateEvidence(
   input: CandidateEvidenceInput,
   registryCache: Map<string, Promise<NpmRegistryPackage | null>>,
-  compareUrlCache: Map<string, Promise<boolean>>
+  urlReachableCache: Map<string, Promise<boolean>>
 ): Promise<CandidateEvidenceResult> {
   const npmDiffLink = buildNpmDiffLink(
     input.packageName,
@@ -77,38 +79,39 @@ async function buildCandidateEvidence(
     input.targetVersion
   );
 
-  if (!(input.installedVersion && input.targetVersion)) {
-    return {
-      versionWindow: createEmptyVersionWindow(),
-      evidence: buildEvidenceLinks(null, npmDiffLink),
-    };
-  }
-
   const registry = await getRegistryPackage(input.packageName, registryCache);
-  if (!registry) {
-    return {
-      versionWindow: createEmptyVersionWindow(),
-      evidence: buildEvidenceLinks(null, npmDiffLink),
-    };
-  }
+  const repositoryLinks = registry
+    ? await buildRepositoryEvidenceLinks(registry, urlReachableCache)
+    : {};
 
-  const versionWindow = buildVersionWindow(
-    registry,
-    input.installedVersion,
-    input.targetVersion
-  );
+  const versionWindow =
+    registry && input.installedVersion && input.targetVersion
+      ? buildVersionWindow(
+          registry,
+          input.installedVersion,
+          input.targetVersion
+        )
+      : createEmptyVersionWindow();
 
-  const compareUrl = await buildCompareEvidence({
-    registry,
-    packageName: input.packageName,
-    installedVersion: input.installedVersion,
-    targetVersion: input.targetVersion,
-    compareUrlCache,
-  });
+  const compareUrl =
+    registry && input.installedVersion && input.targetVersion
+      ? await buildCompareEvidence({
+          registry,
+          packageName: input.packageName,
+          installedVersion: input.installedVersion,
+          targetVersion: input.targetVersion,
+          urlReachableCache,
+        })
+      : null;
 
   return {
     versionWindow,
-    evidence: buildEvidenceLinks(compareUrl, npmDiffLink),
+    evidence: buildEvidenceLinks({
+      compare: compareUrl ?? undefined,
+      npmDiffLink: npmDiffLink ?? undefined,
+      releases: repositoryLinks.releases,
+      changelog: repositoryLinks.changelog,
+    }),
   };
 }
 
@@ -223,20 +226,27 @@ function semverParse(value: string): {
 }
 
 function buildEvidenceLinks(
-  compareUrl: string | null,
-  npmDiffLink: string | null
+  links: Partial<NextUpdatesEvidence["links"]>
 ): NextUpdatesEvidence | null {
-  if (!(compareUrl || npmDiffLink)) {
+  const cleaned: NextUpdatesEvidence["links"] = {};
+  if (links.compare) {
+    cleaned.compare = links.compare;
+  }
+  if (links.npmDiffLink) {
+    cleaned.npmDiffLink = links.npmDiffLink;
+  }
+  if (links.releases) {
+    cleaned.releases = links.releases;
+  }
+  if (links.changelog) {
+    cleaned.changelog = links.changelog;
+  }
+
+  if (Object.keys(cleaned).length === 0) {
     return null;
   }
-  const links: NextUpdatesEvidence["links"] = {};
-  if (compareUrl) {
-    links.compare = compareUrl;
-  }
-  if (npmDiffLink) {
-    links.npmDiffLink = npmDiffLink;
-  }
-  return { links };
+
+  return { links: cleaned };
 }
 
 async function buildCompareEvidence(options: {
@@ -244,7 +254,7 @@ async function buildCompareEvidence(options: {
   packageName: string;
   installedVersion: string;
   targetVersion: string;
-  compareUrlCache: Map<string, Promise<boolean>>;
+  urlReachableCache: Map<string, Promise<boolean>>;
 }): Promise<string | null> {
   const repositoryUrl = normalizeRepositoryUrl(options.registry.repository);
   if (!repositoryUrl) {
@@ -264,9 +274,9 @@ async function buildCompareEvidence(options: {
   );
   for (const pair of tagPairs) {
     const compareUrl = buildCompareUrl(repositoryUrl, pair);
-    const reachable = await isCompareUrlReachable(
+    const reachable = await isUrlReachable(
       compareUrl,
-      options.compareUrlCache
+      options.urlReachableCache
     );
     if (reachable) {
       return compareUrl;
@@ -310,6 +320,70 @@ function normalizeTagVersion(version: string): string | null {
     }
   }
   return normalized;
+}
+
+async function buildRepositoryEvidenceLinks(
+  registry: NpmRegistryPackage,
+  urlReachableCache: Map<string, Promise<boolean>>
+): Promise<{ releases?: string; changelog?: string }> {
+  const repositoryUrl = normalizeRepositoryUrl(registry.repository);
+  if (!repositoryUrl) {
+    return {};
+  }
+
+  const releases = await resolveReleasesUrl(repositoryUrl, urlReachableCache);
+  const changelog = await resolveChangelogUrl(repositoryUrl, urlReachableCache);
+
+  return {
+    releases: releases ?? undefined,
+    changelog: changelog ?? undefined,
+  };
+}
+
+async function resolveReleasesUrl(
+  repositoryUrl: string,
+  urlReachableCache: Map<string, Promise<boolean>>
+): Promise<string | null> {
+  const latestUrl = `${repositoryUrl}/releases/latest`;
+  const reachable = await isUrlReachable(latestUrl, urlReachableCache);
+  if (!reachable) {
+    return null;
+  }
+  return `${repositoryUrl}/releases`;
+}
+
+async function resolveChangelogUrl(
+  repositoryUrl: string,
+  urlReachableCache: Map<string, Promise<boolean>>
+): Promise<string | null> {
+  const rawBase = buildRawGithubBaseUrl(repositoryUrl);
+  if (!rawBase) {
+    return null;
+  }
+
+  const candidates = ["CHANGELOG.md", "CHANGELOG", "HISTORY.md", "RELEASES.md"];
+
+  for (const candidate of candidates) {
+    const url = `${rawBase}${candidate}`;
+    const reachable = await isUrlReachable(url, urlReachableCache);
+    if (reachable) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
+function buildRawGithubBaseUrl(repositoryUrl: string): string | null {
+  const prefix = "https://github.com/";
+  if (!repositoryUrl.startsWith(prefix)) {
+    return null;
+  }
+  const repoPath = repositoryUrl.slice(prefix.length);
+  if (repoPath.trim() === "") {
+    return null;
+  }
+  return `https://raw.githubusercontent.com/${repoPath}/HEAD/`;
 }
 
 function buildCompareTagPairs(
@@ -358,7 +432,7 @@ function encodeGitTag(tag: string): string {
   return encodeURIComponent(tag);
 }
 
-function isCompareUrlReachable(
+function isUrlReachable(
   url: string,
   cache: Map<string, Promise<boolean>>
 ): Promise<boolean> {
@@ -367,15 +441,15 @@ function isCompareUrlReachable(
     return cached;
   }
 
-  const checkPromise = checkCompareUrl(url);
+  const checkPromise = checkUrl(url);
   cache.set(url, checkPromise);
   return checkPromise;
 }
 
-async function checkCompareUrl(url: string): Promise<boolean> {
+async function checkUrl(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, { method: "HEAD" });
-    return response.status === 200;
+    return response.status >= 200 && response.status < 400;
   } catch {
     return false;
   }
