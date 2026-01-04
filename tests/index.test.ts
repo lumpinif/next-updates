@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { expect, test } from "vitest";
-
+import { formatNextUpdatesGuidePromptMarkdown } from "../src/cli/prompts/next-updates-guide";
 import {
   formatNextUpdatesPromptMarkdown,
   writeNextUpdatesReportJson,
@@ -90,4 +90,18 @@ test("writeNextUpdatesReportJson writes to provided filename", async () => {
   expect(outPath).toBe(path.join(cwd, "next-updates-report.json"));
   const contents = await fs.readFile(outPath, "utf8");
   expect(contents).toContain('"scopeRequested": "root"');
+});
+
+test("formatNextUpdatesGuidePromptMarkdown includes CLI instructions", () => {
+  const guide = formatNextUpdatesGuidePromptMarkdown({
+    packageManager: "pnpm",
+    workspaces: ["apps/*"],
+    repoSizeHint: "large",
+  });
+
+  expect(guide).toContain("# next-updates agent guide");
+  expect(guide).toContain("--interactive");
+  expect(guide).toContain("--scope <all|root|workspaces>");
+  expect(guide).toContain("--output <prompt|json>");
+  expect(guide).toContain("Repo size hint: large");
 });

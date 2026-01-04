@@ -1,7 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { promptNextUpdates } from "../prompts/next-updates";
+import {
+  type NextUpdatesDep,
+  type NextUpdatesOutput,
+  type NextUpdatesPromptResult,
+  type NextUpdatesRisk,
+  type NextUpdatesScope,
+  type NextUpdatesTarget,
+  promptNextUpdates,
+} from "../prompts/next-updates";
 import {
   collectNextUpdatesReport,
   formatNextUpdatesPromptMarkdown,
@@ -26,14 +34,17 @@ async function hasWorkspaces(cwd: string): Promise<boolean> {
 export async function runNextUpdatesFlow(options: {
   cwd: string;
   ui: ClackUi;
-  depOverride?: "all" | "dependencies" | "devDependencies";
+  defaults?: Partial<NextUpdatesPromptResult>;
   debugDump?: boolean;
 }): Promise<void> {
   const workspacesAvailable = await hasWorkspaces(options.cwd);
-  const answers = await promptNextUpdates(options.ui, {
-    dep: options.depOverride,
-    scope: workspacesAvailable ? undefined : "root",
-  });
+  const defaults: Partial<NextUpdatesPromptResult> = {
+    ...options.defaults,
+  };
+  if (!workspacesAvailable && defaults.scope === undefined) {
+    defaults.scope = "root";
+  }
+  const answers = await promptNextUpdates(options.ui, defaults);
 
   if (answers === null) {
     options.ui.outro("Cancelled.");
@@ -66,4 +77,40 @@ export async function runNextUpdatesFlow(options: {
   }
 
   options.ui.print(formatNextUpdatesPromptMarkdown(report));
+}
+
+export async function runNextUpdatesNonInteractive(options: {
+  cwd: string;
+  stdout: NodeJS.WriteStream;
+  scope: NextUpdatesScope;
+  target: NextUpdatesTarget;
+  dep: NextUpdatesDep;
+  risk: NextUpdatesRisk;
+  output: NextUpdatesOutput;
+  debugDump?: boolean;
+}): Promise<void> {
+  const debugDumpDir = options.debugDump
+    ? path.resolve(options.cwd, "next-updates-debug")
+    : undefined;
+
+  const report = await collectNextUpdatesReport({
+    cwd: options.cwd,
+    scope: options.scope,
+    target: options.target,
+    dep: options.dep,
+    risk: options.risk,
+    debugDumpDir,
+  });
+
+  if (options.output === "json") {
+    const outPath = await writeNextUpdatesReportJson({
+      cwd: options.cwd,
+      fileName: "next-updates-report.json",
+      report,
+    });
+    options.stdout.write(`${outPath}\n`);
+    return;
+  }
+
+  options.stdout.write(formatNextUpdatesPromptMarkdown(report));
 }

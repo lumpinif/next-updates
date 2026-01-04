@@ -28,7 +28,9 @@ Status: this repo is currently **early scaffolding** (you can see the Clack UI),
 
 Once published to npm:
 
-- `npx next-updates@latest`
+- `npx next-updates@latest` (prints the agent guide prompt)
+- `npx next-updates@latest --interactive` (UI wizard)
+- `npx next-updates@latest --scope <all|root|workspaces> --target <latest|minor|patch> --dep <all|dependencies|devDependencies> --risk <all|major-only|non-major|prerelease-only|unknown-only> --output <prompt|json>`
 - `pnpm dlx next-updates@latest`
 - `yarn dlx next-updates@latest`
 - `bunx next-updates@latest`
@@ -37,9 +39,9 @@ Local dev (this repository):
 
 - `pnpm install`
 - `pnpm build`
-- `node dist/bin.mjs`
+- `node dist/bin.mjs --interactive`
 
-## Output (JSON)
+## Output (prompt + JSON)
 
 - `packages` groups by `package.json` path, then dependency type, then package name.
 - Each package includes `current` and `target` (range + version), `versionWindow.delta`, and `evidence.links`.
@@ -48,10 +50,13 @@ Local dev (this repository):
 - `evidence.links.npmDiffLink`: registry diff command.
 - `evidence.links.releases`: GitHub releases list.
 - `evidence.links.changelog`: raw changelog file.
+- `--output prompt` prints a Markdown prompt to stdout.
+- `--output json` writes `next-updates-report.json` to the current directory.
 
 ## Docs
 
 - Product/tech design: `dev-spec/next-updates-prep.md`
+- Agent prompt template: `docs/agent-prompt.md`
 
 ## Contributing
 

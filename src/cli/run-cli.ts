@@ -4,18 +4,75 @@ export type RunCliOptions = {
   stderr?: NodeJS.WriteStream;
 };
 
-import { runNextUpdatesFlow } from "./flows/next-updates-flow";
-import type { NextUpdatesDep } from "./prompts/next-updates";
+import {
+  runNextUpdatesFlow,
+  runNextUpdatesNonInteractive,
+} from "./flows/next-updates-flow";
+import type { NextUpdatesPromptResult } from "./prompts/next-updates";
+import {
+  collectNextUpdatesGuideContext,
+  formatNextUpdatesGuidePromptMarkdown,
+} from "./prompts/next-updates-guide";
 import { createClackUi } from "./ui/clack-ui";
 
 type CliCommand = "help" | "version" | "run";
+
+type RunOptions = NextUpdatesPromptResult;
+
+type ParsedRunOptions = {
+  hasRunFlags: boolean;
+  debugDump: boolean;
+  overrides: Partial<RunOptions>;
+  resolved: RunOptions;
+  errors: string[];
+};
+
+type FlagValue = {
+  present: boolean;
+  value?: string;
+};
+
+const DEFAULT_RUN_OPTIONS: RunOptions = {
+  scope: "all",
+  target: "latest",
+  dep: "all",
+  risk: "all",
+  output: "prompt",
+};
+
+const scopeValues = ["all", "root", "workspaces"] as const;
+const targetValues = ["latest", "minor", "patch"] as const;
+const depValues = ["all", "dependencies", "devDependencies"] as const;
+const riskValues = [
+  "all",
+  "major-only",
+  "non-major",
+  "prerelease-only",
+  "unknown-only",
+] as const;
+const outputValues = ["prompt", "json"] as const;
 
 const HELP_TEXT = `next-updates
 
 Usage:
   next-updates
+  next-updates --interactive
+  next-updates --scope <all|root|workspaces> --target <latest|minor|patch> --dep <all|dependencies|devDependencies> --risk <all|major-only|non-major|prerelease-only|unknown-only> --output <prompt|json>
   next-updates --help
   next-updates --version
+
+Notes:
+  - Running with no flags prints the agent guide prompt.
+  - --output json writes next-updates-report.json to the current directory.
+
+Options:
+  --interactive, -i   Run the interactive UI wizard
+  --scope             all|root|workspaces
+  --target            latest|minor|patch
+  --dep               all|dependencies|devDependencies
+  --risk              all|major-only|non-major|prerelease-only|unknown-only
+  --output, --format  prompt|json
+  --debug-dump        Write debug dumps to ./next-updates-debug
 `;
 
 function writeLine(stream: NodeJS.WriteStream, line: string): void {
@@ -23,52 +80,146 @@ function writeLine(stream: NodeJS.WriteStream, line: string): void {
 }
 
 function parseCommand(args: readonly string[]): CliCommand {
-  const [first] = args;
-
-  if (first === "--help" || first === "-h" || first === "help") {
+  if (args.includes("--help") || args.includes("-h") || args.includes("help")) {
     return "help";
   }
 
-  if (first === "--version" || first === "-v" || first === "version") {
+  if (
+    args.includes("--version") ||
+    args.includes("-v") ||
+    args.includes("version")
+  ) {
     return "version";
-  }
-
-  if (first === undefined) {
-    return "run";
   }
 
   return "run";
 }
 
-function parseDepOverride(args: readonly string[]): NextUpdatesDep | undefined {
-  const depIndex = args.findIndex(
-    (cliArg) => cliArg === "--dep" || cliArg.startsWith("--dep=")
+function readFlagValue(args: readonly string[], flag: string): FlagValue {
+  const flagIndex = args.findIndex(
+    (cliArg) => cliArg === flag || cliArg.startsWith(`${flag}=`)
   );
-  if (depIndex === -1) {
-    return;
+  if (flagIndex === -1) {
+    return { present: false };
   }
 
-  const depArg = args[depIndex];
-  let value: string | undefined;
-  if (depArg === "--dep") {
-    value = args[depIndex + 1];
-  } else if (depArg.startsWith("--dep=")) {
-    value = depArg.slice("--dep=".length);
+  const flagArg = args[flagIndex];
+  if (flagArg === flag) {
+    return { present: true, value: args[flagIndex + 1] };
   }
 
-  if (
-    value === "all" ||
-    value === "dependencies" ||
-    value === "devDependencies"
-  ) {
-    return value;
-  }
-
-  return;
+  return { present: true, value: flagArg.slice(flag.length + 1) };
 }
 
-function parseDebugDump(args: readonly string[]): boolean {
-  return args.includes("--debug-dump");
+function isAllowedValue<T extends string>(
+  value: string,
+  allowed: readonly T[]
+): value is T {
+  return allowed.includes(value as T);
+}
+
+function parseEnumFlag<T extends string>(
+  args: readonly string[],
+  flags: readonly string[],
+  allowed: readonly T[],
+  label: string
+): { present: boolean; value?: T; error?: string } {
+  const matches = flags
+    .map((flag) => ({ flag, ...readFlagValue(args, flag) }))
+    .filter((match) => match.present);
+
+  if (matches.length === 0) {
+    return { present: false };
+  }
+
+  for (const match of matches) {
+    const value = match.value;
+    if (!value || value.startsWith("-")) {
+      return { present: true, error: `Missing value for ${label}.` };
+    }
+  }
+
+  const uniqueValues = new Set(matches.map((match) => match.value));
+  if (uniqueValues.size > 1) {
+    return { present: true, error: `Conflicting values for ${label}.` };
+  }
+
+  const value = matches[0]?.value;
+  if (!(value && isAllowedValue(value, allowed))) {
+    const printable = value ?? "<missing>";
+    return {
+      present: true,
+      error: `Invalid value for ${label}: ${printable}.`,
+    };
+  }
+
+  return { present: true, value };
+}
+
+function parseRunOptions(args: readonly string[]): ParsedRunOptions {
+  const errors: string[] = [];
+  const scope = parseEnumFlag(args, ["--scope"], scopeValues, "--scope");
+  const target = parseEnumFlag(args, ["--target"], targetValues, "--target");
+  const dep = parseEnumFlag(args, ["--dep"], depValues, "--dep");
+  const risk = parseEnumFlag(args, ["--risk"], riskValues, "--risk");
+  const output = parseEnumFlag(
+    args,
+    ["--output", "--format"],
+    outputValues,
+    "--output/--format"
+  );
+
+  for (const entry of [scope, target, dep, risk, output]) {
+    if (entry.error) {
+      errors.push(entry.error);
+    }
+  }
+
+  const overrides: Partial<RunOptions> = {};
+  if (scope.value) {
+    overrides.scope = scope.value;
+  }
+  if (target.value) {
+    overrides.target = target.value;
+  }
+  if (dep.value) {
+    overrides.dep = dep.value;
+  }
+  if (risk.value) {
+    overrides.risk = risk.value;
+  }
+  if (output.value) {
+    overrides.output = output.value;
+  }
+
+  const debugDump = args.includes("--debug-dump");
+  const hasRunFlags =
+    scope.present ||
+    target.present ||
+    dep.present ||
+    risk.present ||
+    output.present ||
+    debugDump;
+
+  const resolved: RunOptions = {
+    scope: overrides.scope ?? DEFAULT_RUN_OPTIONS.scope,
+    target: overrides.target ?? DEFAULT_RUN_OPTIONS.target,
+    dep: overrides.dep ?? DEFAULT_RUN_OPTIONS.dep,
+    risk: overrides.risk ?? DEFAULT_RUN_OPTIONS.risk,
+    output: overrides.output ?? DEFAULT_RUN_OPTIONS.output,
+  };
+
+  return {
+    hasRunFlags,
+    debugDump,
+    overrides,
+    resolved,
+    errors,
+  };
+}
+
+function parseInteractive(args: readonly string[]): boolean {
+  return args.includes("--interactive") || args.includes("-i");
 }
 
 export async function runCli(options: RunCliOptions): Promise<void> {
@@ -76,8 +227,6 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   const stderr = options.stderr ?? process.stderr;
   const args = options.argv.slice(2);
   const command = parseCommand(args);
-  const depOverride = parseDepOverride(args);
-  const debugDump = parseDebugDump(args);
 
   if (command === "version") {
     // Package version is wired through package managers; keeping placeholder until we formalize a version source.
@@ -90,14 +239,44 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     return;
   }
 
+  const parsed = parseRunOptions(args);
+  if (parsed.errors.length > 0) {
+    for (const error of parsed.errors) {
+      writeLine(stderr, error);
+    }
+    writeLine(stderr, "Run with --help to see valid options.");
+    return;
+  }
+
+  const interactive = parseInteractive(args);
+  if (!(interactive || parsed.hasRunFlags)) {
+    const context = await collectNextUpdatesGuideContext(process.cwd());
+    stdout.write(formatNextUpdatesGuidePromptMarkdown(context));
+    return;
+  }
+
   try {
-    const ui = createClackUi({ stdout });
-    ui.intro("next-updates");
-    await runNextUpdatesFlow({
+    if (interactive) {
+      const ui = createClackUi({ stdout });
+      ui.intro("next-updates");
+      await runNextUpdatesFlow({
+        cwd: process.cwd(),
+        ui,
+        defaults: parsed.overrides,
+        debugDump: parsed.debugDump,
+      });
+      return;
+    }
+
+    await runNextUpdatesNonInteractive({
       cwd: process.cwd(),
-      ui,
-      depOverride,
-      debugDump,
+      stdout,
+      scope: parsed.resolved.scope,
+      target: parsed.resolved.target,
+      dep: parsed.resolved.dep,
+      risk: parsed.resolved.risk,
+      output: parsed.resolved.output,
+      debugDump: parsed.debugDump,
     });
     return;
   } catch (error: unknown) {
