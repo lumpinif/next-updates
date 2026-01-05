@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { expect, test } from "vitest";
-import { formatNextUpdatesGuidePromptMarkdown } from "../src/cli/prompts/next-updates-guide";
+import {
+  formatNextUpdatesGuidePromptMarkdown,
+  type NextUpdatesGuideContext,
+} from "../src/cli/prompts/next-updates-guide";
 import {
   formatNextUpdatesPromptMarkdown,
   writeNextUpdatesReportJson,
@@ -93,15 +96,33 @@ test("writeNextUpdatesReportJson writes to provided filename", async () => {
 });
 
 test("formatNextUpdatesGuidePromptMarkdown includes CLI instructions", () => {
-  const guide = formatNextUpdatesGuidePromptMarkdown({
+  const guideContext: NextUpdatesGuideContext = {
+    repoName: "deepcrawl",
     packageManager: "pnpm",
     workspaces: ["apps/*"],
     repoSizeHint: "large",
-  });
+    workspaceGroups: [
+      {
+        key: "apps",
+        label: "Apps",
+        entries: [
+          {
+            path: "apps/app",
+            label: "Dashboard",
+            groupKey: "apps",
+            groupLabel: "Apps",
+          },
+        ],
+      },
+    ],
+  };
+  const guide = formatNextUpdatesGuidePromptMarkdown(guideContext);
 
   expect(guide).toContain("# next-updates agent guide");
+  expect(guide).toContain("next-updates reads the repo");
   expect(guide).toContain("--interactive");
   expect(guide).toContain("--scope <all|root|workspaces>");
   expect(guide).toContain("--output <prompt|json>");
-  expect(guide).toContain("Repo size hint: large");
+  expect(guide).toContain("Repo size: large");
+  expect(guide).toContain("Dashboard");
 });

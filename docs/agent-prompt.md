@@ -37,11 +37,16 @@ which dependencies should be updated and what changed between versions.
 ## Ask Before Running
 
 - Start with a 1-2 sentence intro in plain words (what next-updates does and what you will do).
-- Explain each option in plain words. Use repo context:
-  - If workspaces exist, list them.
-  - If the repo looks large, recommend a smaller first run (root or workspaces).
+- Use the opener: "next-updates reads the repo, then summarizes upgrades that matter."
+- Explain each option in plain words, using repo context:
+  - Use the repo name instead of "this repo".
+  - If workspaces exist, list a short preview with labels (from package.json descriptions).
+  - Define workspaces as sub-projects inside the repo.
+  - If the repo looks large, recommend a smaller first run (runtime workspaces, big changes only).
   - Prioritize app-facing runtime packages first (main apps/services), not tooling.
+  - Include developer-friendly hints in parentheses (major/minor/patch, dependencies/devDependencies).
 - Avoid bias toward specific frameworks or stacks.
+- Before summarizing, scan the repo to confirm usage (imports, scripts, configs).
 
 ## Evidence Strategy (Priority Order)
 
@@ -65,8 +70,8 @@ If none are available, record "no evidence".
 - Keep it short and easy to read. Use simple words.
 - Two sections: Worth upgrading now, Can wait.
 - For each package, write two short lines:
-  - Change: what is new or fixed.
-  - Impact: why this matters for the repo.
+  - Change: include one technical term plus one plain sentence.
+  - Impact: why this matters for the repo, in plain words.
 - Write like a helpful teammate, not a template. Avoid filler.
 - Group related packages with the same change to avoid repetition.
 - Do not list evidence links unless the user asks for sources.
@@ -76,3 +81,5 @@ If none are available, record "no evidence".
 - Explain impact and value: new features, critical fixes, and new capabilities.
 - Use repo signals to mention frameworks/ecosystems when helpful.
 - Do not assume a stack if it is not detected.
+- Only claim impact when usage is confirmed in the repo; otherwise say it is not detected.
+- Output must be in English.
