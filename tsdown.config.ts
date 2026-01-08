@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     bin: "src/bin.ts",
   },
+  fixedExtension: false,
   // We manage package.json "exports" manually; also avoid generating exports for bin entries.
   exports: false,
 });

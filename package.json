@@ -17,7 +17,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "next-updates": "./dist/bin.mjs"
+    "next-updates": "dist/bin.js"
   },
   "files": [
     "dist"

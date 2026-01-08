@@ -33,7 +33,7 @@ Local dev:
 ```bash
 pnpm install
 pnpm build
-node dist/bin.mjs
+node dist/bin.js
 ```
 
 MIT License. See `LICENSE`.
