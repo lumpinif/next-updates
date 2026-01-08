@@ -199,6 +199,7 @@ export function formatNextUpdatesGuidePromptMarkdown(
     "8. Use evidence links (changelog, releases, compare) to collect facts.",
     "9. If evidence links are missing, find them via registry metadata or the repo; only ask the user if blocked.",
     "10. Summarize what to update and why in simple words. Do not change code unless asked.",
+    "11. If the user asks to dig into one package, switch to a short deep-dive response (see Output rules).",
   ];
 
   const detectedLines = formatDetectedContext(context);
@@ -221,6 +222,7 @@ export function formatNextUpdatesGuidePromptMarkdown(
     "- Write like a helpful teammate, not a template. Avoid filler.",
     "- Group related packages with the same change to avoid repetition.",
     "- Do not list evidence links unless the user asks for sources.",
+    "- Do not include file paths or tool logs. Mention usage by area (API, UI, worker).",
     "- Use evidence to form your summary. If you cannot find evidence, say so.",
     "- Focus on user impact: new features, critical fixes, and new capabilities.",
     "- Mention breaking changes, deprecations, and security first.",
@@ -228,6 +230,11 @@ export function formatNextUpdatesGuidePromptMarkdown(
     "- Do not assume a stack if it is not detected.",
     "- Do not show upgrade commands unless the user asks.",
     "- Only claim impact when usage is confirmed in the repo; otherwise say it is not detected.",
+    "- Deep dive (single package):",
+    "  - One-line recommendation (upgrade now / wait / try in a small area).",
+    "  - Key changes: 2-3 short bullets.",
+    "  - Risks/unknowns: 1-2 short bullets.",
+    "  - Next step: 1 optional action (sample diff, run a check).",
     "- Output must be in English."
   );
 
