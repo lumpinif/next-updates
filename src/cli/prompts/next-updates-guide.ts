@@ -2,16 +2,7 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parse as parseYaml } from "yaml";
-
-type PackageJson = {
-  workspaces?: unknown;
-  packageManager?: string;
-};
-
-type WorkspaceConfig = {
-  packages?: unknown;
-};
+import { detectWorkspacePatterns, readRootPackageJson } from "../fs/workspaces";
 
 type WorkspaceEntry = {
   path: string;
@@ -47,52 +38,8 @@ const titleCaseSplitRegex = /[\s_-]+/;
 const mixedCaseRegex = /[A-Z]/;
 const trailingSlashRegex = /\/+$/;
 
-function parseWorkspacesValue(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string");
-  }
-  if (value && typeof value === "object") {
-    const packages = (value as { packages?: unknown }).packages;
-    if (Array.isArray(packages)) {
-      return packages.filter(
-        (entry): entry is string => typeof entry === "string"
-      );
-    }
-  }
-  return [];
-}
-
-async function readPackageJson(cwd: string): Promise<PackageJson | null> {
-  try {
-    const raw = await fs.readFile(path.resolve(cwd, "package.json"), "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-    return parsed as PackageJson;
-  } catch {
-    return null;
-  }
-}
-
-async function readPnpmWorkspace(cwd: string): Promise<WorkspaceConfig | null> {
-  try {
-    const raw = await fs.readFile(
-      path.resolve(cwd, "pnpm-workspace.yaml"),
-      "utf8"
-    );
-    const parsed = parseYaml(raw);
-    if (typeof parsed !== "object" || parsed === null) {
-      return null;
-    }
-    return parsed as WorkspaceConfig;
-  } catch {
-    return null;
-  }
-}
-
 async function detectPackageManager(cwd: string): Promise<string | undefined> {
-  const pkg = await readPackageJson(cwd);
+  const pkg = await readRootPackageJson(cwd);
   if (pkg?.packageManager) {
     const raw = pkg.packageManager;
     if (raw.startsWith("pnpm")) {
@@ -121,21 +68,6 @@ async function detectPackageManager(cwd: string): Promise<string | undefined> {
   return;
 }
 
-async function detectWorkspaces(cwd: string): Promise<string[]> {
-  const workspaceMatches: string[] = [];
-  const pkg = await readPackageJson(cwd);
-  if (pkg?.workspaces) {
-    workspaceMatches.push(...parseWorkspacesValue(pkg.workspaces));
-  }
-
-  const pnpmWorkspace = await readPnpmWorkspace(cwd);
-  if (pnpmWorkspace?.packages) {
-    workspaceMatches.push(...parseWorkspacesValue(pnpmWorkspace.packages));
-  }
-
-  return Array.from(new Set(workspaceMatches)).sort();
-}
-
 function resolveRepoSizeHint(workspaces: string[]): "small" | "large" {
   if (workspaces.length >= 4) {
     return "large";
@@ -150,7 +82,7 @@ export async function collectNextUpdatesGuideContext(
   cwd: string
 ): Promise<NextUpdatesGuideContext> {
   const packageManager = await detectPackageManager(cwd);
-  const workspaces = await detectWorkspaces(cwd);
+  const workspaces = await detectWorkspacePatterns(cwd);
   const repoSizeHint =
     workspaces.length > 0 ? resolveRepoSizeHint(workspaces) : undefined;
   const workspaceEntries = await collectWorkspaceEntries(cwd);
@@ -518,7 +450,7 @@ function getGroupDisplayLabel(group: WorkspaceGroup): string {
 }
 
 async function collectWorkspaceEntries(cwd: string): Promise<WorkspaceEntry[]> {
-  const patterns = await collectWorkspacePatterns(cwd);
+  const patterns = await detectWorkspacePatterns(cwd);
   if (patterns.length === 0) {
     return [];
   }
@@ -529,19 +461,6 @@ async function collectWorkspaceEntries(cwd: string): Promise<WorkspaceEntry[]> {
     )
   );
   return entries.filter((entry): entry is WorkspaceEntry => entry !== null);
-}
-
-async function collectWorkspacePatterns(cwd: string): Promise<string[]> {
-  const patterns: string[] = [];
-  const pkg = await readPackageJson(cwd);
-  if (pkg?.workspaces) {
-    patterns.push(...parseWorkspacesValue(pkg.workspaces));
-  }
-  const pnpmWorkspace = await readPnpmWorkspace(cwd);
-  if (pnpmWorkspace?.packages) {
-    patterns.push(...parseWorkspacesValue(pnpmWorkspace.packages));
-  }
-  return Array.from(new Set(patterns.filter((entry) => entry.length > 0)));
 }
 
 async function resolveWorkspacePaths(

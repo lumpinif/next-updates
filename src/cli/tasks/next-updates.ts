@@ -4,18 +4,18 @@ import path from "node:path";
 import { run as ncuRun, type RunOptions } from "npm-check-updates";
 import { compare, parse } from "semver";
 import { parse as parseYaml } from "yaml";
-
-import {
-  collectCandidateEvidence,
-  type NextUpdatesEvidence,
-  type NextUpdatesVersionWindow,
-} from "../evidence";
 import type {
   NextUpdatesDep,
   NextUpdatesRisk,
   NextUpdatesScope,
   NextUpdatesTarget,
-} from "../prompts/next-updates";
+} from "../config/options";
+import {
+  collectCandidateEvidence,
+  type NextUpdatesEvidence,
+  type NextUpdatesVersionWindow,
+} from "../evidence";
+import { hasWorkspaceConfig } from "../fs/workspaces";
 
 export type NextUpdatesVersionSpec = {
   range: string;
@@ -136,10 +136,6 @@ const dependencyTypeOrder: NextUpdatesCandidateBase["dependencyType"][] = [
   "devDependencies",
   "unknown",
 ];
-
-function hasWorkspacesField(packageJson: PackageJson): boolean {
-  return packageJson.workspaces !== undefined;
-}
 
 function createRunOptions(
   cwd: string,
@@ -1010,7 +1006,10 @@ export async function collectNextUpdatesReport(options: {
 
   const rootPackageFile = path.resolve(options.cwd, "package.json");
   const rootPackageJson = await readPackageJson(rootPackageFile);
-  const workspacesAvailable = hasWorkspacesField(rootPackageJson);
+  const workspacesAvailable = await hasWorkspaceConfig(
+    options.cwd,
+    rootPackageJson
+  );
 
   const scopeEffective = resolveScopeEffective(
     options.scope,

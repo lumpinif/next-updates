@@ -4,11 +4,18 @@ export type RunCliOptions = {
   stderr?: NodeJS.WriteStream;
 };
 
+import type { NextUpdatesPromptResult } from "./config/options";
+import {
+  depValues,
+  outputValues,
+  riskValues,
+  scopeValues,
+  targetValues,
+} from "./config/options";
 import {
   runNextUpdatesFlow,
   runNextUpdatesNonInteractive,
 } from "./flows/next-updates-flow";
-import type { NextUpdatesPromptResult } from "./prompts/next-updates";
 import {
   collectNextUpdatesGuideContext,
   formatNextUpdatesGuidePromptMarkdown,
@@ -39,18 +46,6 @@ const DEFAULT_RUN_OPTIONS: RunOptions = {
   risk: "all",
   output: "prompt",
 };
-
-const scopeValues = ["all", "root", "workspaces"] as const;
-const targetValues = ["latest", "minor", "patch"] as const;
-const depValues = ["all", "dependencies", "devDependencies"] as const;
-const riskValues = [
-  "all",
-  "major-only",
-  "non-major",
-  "prerelease-only",
-  "unknown-only",
-] as const;
-const outputValues = ["prompt", "json"] as const;
 
 const HELP_TEXT = `next-updates
 

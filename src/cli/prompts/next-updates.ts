@@ -1,23 +1,12 @@
+import type {
+  NextUpdatesDep,
+  NextUpdatesOutput,
+  NextUpdatesPromptResult,
+  NextUpdatesRisk,
+  NextUpdatesScope,
+  NextUpdatesTarget,
+} from "../config/options";
 import type { ClackUi } from "../ui/clack-ui";
-
-export type NextUpdatesScope = "all" | "root" | "workspaces";
-export type NextUpdatesTarget = "latest" | "minor" | "patch";
-export type NextUpdatesDep = "all" | "dependencies" | "devDependencies";
-export type NextUpdatesRisk =
-  | "all"
-  | "major-only"
-  | "non-major"
-  | "prerelease-only"
-  | "unknown-only";
-export type NextUpdatesOutput = "prompt" | "json";
-
-export type NextUpdatesPromptResult = {
-  scope: NextUpdatesScope;
-  target: NextUpdatesTarget;
-  dep: NextUpdatesDep;
-  risk: NextUpdatesRisk;
-  output: NextUpdatesOutput;
-};
 
 export async function promptNextUpdates(
   ui: ClackUi,

@@ -1,15 +1,15 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 
-import {
-  type NextUpdatesDep,
-  type NextUpdatesOutput,
-  type NextUpdatesPromptResult,
-  type NextUpdatesRisk,
-  type NextUpdatesScope,
-  type NextUpdatesTarget,
-  promptNextUpdates,
-} from "../prompts/next-updates";
+import type {
+  NextUpdatesDep,
+  NextUpdatesOutput,
+  NextUpdatesPromptResult,
+  NextUpdatesRisk,
+  NextUpdatesScope,
+  NextUpdatesTarget,
+} from "../config/options";
+import { hasWorkspaceConfig } from "../fs/workspaces";
+import { promptNextUpdates } from "../prompts/next-updates";
 import {
   collectNextUpdatesReport,
   formatNextUpdatesPromptMarkdown,
@@ -17,27 +17,13 @@ import {
 } from "../tasks/next-updates";
 import type { ClackUi } from "../ui/clack-ui";
 
-type PackageJson = {
-  workspaces?: unknown;
-};
-
-async function hasWorkspaces(cwd: string): Promise<boolean> {
-  const packageJsonPath = path.resolve(cwd, "package.json");
-  const raw = await fs.readFile(packageJsonPath, "utf8");
-  const parsed: unknown = JSON.parse(raw);
-  if (typeof parsed !== "object" || parsed === null) {
-    return false;
-  }
-  return (parsed as PackageJson).workspaces !== undefined;
-}
-
 export async function runNextUpdatesFlow(options: {
   cwd: string;
   ui: ClackUi;
   defaults?: Partial<NextUpdatesPromptResult>;
   debugDump?: boolean;
 }): Promise<void> {
-  const workspacesAvailable = await hasWorkspaces(options.cwd);
+  const workspacesAvailable = await hasWorkspaceConfig(options.cwd);
   const defaults: Partial<NextUpdatesPromptResult> = {
     ...options.defaults,
   };
