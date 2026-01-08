@@ -1,4 +1,4 @@
-# You can use this one prompt to make your agent tells you what to upgrade and why in your current repo
+# You can use this one prompt to make your agent tell you what to upgrade and why in your current repo
 
 Copy and paste this prompt into your favorite coding agent (Cursor, Codex, Claude Code):
 
