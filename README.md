@@ -56,7 +56,6 @@ Local dev (this repository):
 ## Docs
 
 - Product/tech design: `dev-spec/next-updates-prep.md`
-- Agent prompt template: `docs/agent-prompt.md`
 
 ## Contributing
 
