@@ -1,8 +1,12 @@
 # You can use this one prompt to make your agent tells you what to upgrade and why in your current repo
 
-Paste this into your favorite coding agent (Cursor, Codex, Claude Code). It will scan and tell you what to upgrade in your current repo, based on what you are building.
+Copy and paste this prompt into your favorite coding agent (Cursor, Codex, Claude Code):
 
 > `use npx next-updates to help me upgrade my deps`
+
+Then it will scan and tell you what to upgrade in your current repo, based on what you are building.
+
+![Screenshot](public/screenshot.png)
 
 Philosophy:
 
