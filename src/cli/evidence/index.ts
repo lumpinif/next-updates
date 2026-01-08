@@ -371,6 +371,7 @@ async function resolveReleasesUrlUncached(
 ): Promise<string | null> {
   const latestUrl = `${repositoryUrl}/releases/latest`;
   try {
+    // Probe releases via the latest redirect without downloading the full list.
     const response = await fetch(latestUrl, {
       method: "HEAD",
       redirect: "manual",

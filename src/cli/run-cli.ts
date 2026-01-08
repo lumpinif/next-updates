@@ -4,6 +4,8 @@ export type RunCliOptions = {
   stderr?: NodeJS.WriteStream;
 };
 
+import fs from "node:fs/promises";
+
 import type { NextUpdatesPromptResult } from "./config/options";
 import {
   depValues,
@@ -72,6 +74,31 @@ Options:
 
 function writeLine(stream: NodeJS.WriteStream, line: string): void {
   stream.write(`${line}\n`);
+}
+
+async function readPackageVersion(): Promise<string | null> {
+  const candidates = [
+    new URL("../package.json", import.meta.url),
+    new URL("../../package.json", import.meta.url),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const raw = await fs.readFile(candidate, "utf8");
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null) {
+        continue;
+      }
+      const version = (parsed as { version?: unknown }).version;
+      if (typeof version === "string") {
+        return version;
+      }
+    } catch {
+      // Ignore missing package.json candidates.
+    }
+  }
+
+  return null;
 }
 
 function parseCommand(args: readonly string[]): CliCommand {
@@ -224,8 +251,11 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   const command = parseCommand(args);
 
   if (command === "version") {
-    // Package version is wired through package managers; keeping placeholder until we formalize a version source.
-    writeLine(stdout, "next-updates (version not wired yet)");
+    const version = await readPackageVersion();
+    writeLine(
+      stdout,
+      version ? `next-updates v${version}` : "next-updates (unknown version)"
+    );
     return;
   }
 

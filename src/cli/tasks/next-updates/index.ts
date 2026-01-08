@@ -25,6 +25,7 @@ import {
   buildPackagesFromCandidates,
 } from "./report/build";
 import { formatNextUpdatesPromptMarkdown as formatReportMarkdown } from "./report/format";
+import { resolveScopeEffective } from "./scope";
 import type { NextUpdatesReport } from "./types";
 
 export async function collectNextUpdatesReport(options: {
@@ -153,14 +154,4 @@ async function readRootPackageJsonOrThrow(
     throw new Error(`Invalid package.json at ${rootPackageFile}`);
   }
   return rootPackageJson;
-}
-
-function resolveScopeEffective(
-  scopeRequested: NextUpdatesScope,
-  workspacesAvailable: boolean
-): NextUpdatesScope {
-  if (workspacesAvailable || scopeRequested === "root") {
-    return scopeRequested;
-  }
-  return "root";
 }

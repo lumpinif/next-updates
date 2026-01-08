@@ -49,4 +49,3 @@ https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
 
 The Contributor Covenant Code of Conduct is licensed under CC BY 4.0:
 https://creativecommons.org/licenses/by/4.0/
-
