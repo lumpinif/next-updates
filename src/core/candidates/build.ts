@@ -1,15 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { InstalledVersionLookup } from "../lockfiles";
+import type { InstalledVersionLookup } from "../lockfiles/detect";
 import type {
   NcuUpgraded,
   NcuUpgradedFlat,
   NcuUpgradedWorkspaces,
 } from "../ncu/normalize";
 import { isWorkspacesResult } from "../ncu/normalize";
-import type { DependencyType, NextUpdatesCandidateBase } from "../types";
-import { dependencyTypeOrder } from "../types";
+import type { DependencyType, NextUpdatesCandidateBase } from "../report/types";
+import { dependencyTypeOrder } from "../report/types";
 
 type PackageJson = {
   dependencies?: Record<string, string>;

@@ -7,15 +7,15 @@ import type {
   NextUpdatesRisk,
   NextUpdatesScope,
   NextUpdatesTarget,
-} from "../config/options";
-import { hasWorkspaceConfig } from "../fs/workspaces";
-import { promptNextUpdates } from "../prompts/next-updates";
+} from "../../config/options";
 import {
   collectNextUpdatesReport,
   formatNextUpdatesPromptMarkdown,
   writeNextUpdatesReportJson,
-} from "../tasks/next-updates";
-import type { ClackUi } from "../ui/clack-ui";
+} from "../../core/report/collect";
+import { hasWorkspaceConfig } from "../../infra/fs/workspaces";
+import type { ClackUi } from "../ui/clack";
+import { promptNextUpdates } from "./prompts";
 
 export async function runNextUpdatesFlow(options: {
   cwd: string;

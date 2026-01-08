@@ -3,7 +3,7 @@ import type {
   NextUpdatesCandidateBase,
   NextUpdatesPackageDetails,
   NextUpdatesPackages,
-} from "../types";
+} from "./types";
 
 type NextUpdatesPackageDetailsBase = Omit<
   NextUpdatesPackageDetails,

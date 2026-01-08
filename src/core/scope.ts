@@ -1,4 +1,4 @@
-import type { NextUpdatesScope } from "../../config/options";
+import type { NextUpdatesScope } from "../config/options";
 
 export function resolveScopeEffective(
   scopeRequested: NextUpdatesScope,

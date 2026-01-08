@@ -4,7 +4,7 @@ import {
   type NextUpdatesPackageDetails,
   type NextUpdatesPackages,
   type NextUpdatesReport,
-} from "../types";
+} from "./types";
 
 export function formatNextUpdatesPromptMarkdown(
   report: NextUpdatesReport

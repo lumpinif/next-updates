@@ -5,8 +5,8 @@ import type {
   NextUpdatesRisk,
   NextUpdatesScope,
   NextUpdatesTarget,
-} from "../config/options";
-import type { ClackUi } from "../ui/clack-ui";
+} from "../../config/options";
+import type { ClackUi } from "../ui/clack";
 
 export async function promptNextUpdates(
   ui: ClackUi,

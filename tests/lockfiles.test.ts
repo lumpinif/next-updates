@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { expect, test } from "vitest";
 
-import { createNpmInstalledVersionLookup } from "../src/cli/tasks/next-updates/lockfiles/npm";
-import { createPnpmInstalledVersionLookup } from "../src/cli/tasks/next-updates/lockfiles/pnpm";
+import { createNpmInstalledVersionLookup } from "../src/core/lockfiles/npm";
+import { createPnpmInstalledVersionLookup } from "../src/core/lockfiles/pnpm";
 
 test("npm lockfile lookup reads installed version", async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "next-updates-"));

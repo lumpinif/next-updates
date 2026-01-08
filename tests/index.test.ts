@@ -6,11 +6,11 @@ import { expect, test } from "vitest";
 import {
   formatNextUpdatesGuidePromptMarkdown,
   type NextUpdatesGuideContext,
-} from "../src/cli/prompts/next-updates-guide";
+} from "../src/cli/guide";
 import {
   formatNextUpdatesPromptMarkdown,
   writeNextUpdatesReportJson,
-} from "../src/cli/tasks/next-updates";
+} from "../src/core/report/collect";
 
 test("formatNextUpdatesPromptMarkdown renders grouped candidates", () => {
   const markdown = formatNextUpdatesPromptMarkdown({

@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import {
   detectWorkspacePatterns,
   hasWorkspaceConfig,
-} from "../src/cli/fs/workspaces";
+} from "../src/infra/fs/workspaces";
 
 async function writePackageJson(
   dir: string,

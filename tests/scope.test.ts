@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { resolveScopeEffective } from "../src/cli/tasks/next-updates/scope";
+import { resolveScopeEffective } from "../src/core/scope";
 
 test("resolveScopeEffective falls back to root when workspaces missing", () => {
   expect(resolveScopeEffective("all", false)).toBe("root");

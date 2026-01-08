@@ -6,23 +6,23 @@ export type RunCliOptions = {
 
 import fs from "node:fs/promises";
 
-import type { NextUpdatesPromptResult } from "./config/options";
+import type { NextUpdatesPromptResult } from "../config/options";
 import {
   depValues,
   outputValues,
   riskValues,
   scopeValues,
   targetValues,
-} from "./config/options";
-import {
-  runNextUpdatesFlow,
-  runNextUpdatesNonInteractive,
-} from "./flows/next-updates-flow";
+} from "../config/options";
 import {
   collectNextUpdatesGuideContext,
   formatNextUpdatesGuidePromptMarkdown,
-} from "./prompts/next-updates-guide";
-import { createClackUi } from "./ui/clack-ui";
+} from "./guide";
+import {
+  runNextUpdatesFlow,
+  runNextUpdatesNonInteractive,
+} from "./interactive/flow";
+import { createClackUi } from "./ui/clack";
 
 type CliCommand = "help" | "version" | "run";
 

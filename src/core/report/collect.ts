@@ -8,24 +8,24 @@ import type {
   NextUpdatesScope,
   NextUpdatesTarget,
 } from "../../config/options";
-import { collectCandidateEvidence } from "../../evidence";
 import {
   hasWorkspaceConfig,
   type RootPackageJson,
   readRootPackageJson,
-} from "../../fs/workspaces";
-import { buildCandidates, sortCandidates } from "./candidates/build";
-import { applyRiskFilter } from "./candidates/filter";
-import { writeDebugDump } from "./debug";
-import { createInstalledVersionLookup } from "./lockfiles";
-import { coerceNcuUpgraded, normalizeNcuResult } from "./ncu/normalize";
-import { createRunOptions, createTargetVersionCollector } from "./ncu/run";
+} from "../../infra/fs/workspaces";
+import { buildCandidates, sortCandidates } from "../candidates/build";
+import { applyRiskFilter } from "../candidates/risk-filter";
+import { writeDebugDump } from "../debug";
+import { collectCandidateEvidence } from "../evidence/collect";
+import { createInstalledVersionLookup } from "../lockfiles/detect";
+import { coerceNcuUpgraded, normalizeNcuResult } from "../ncu/normalize";
+import { createRunOptions, createTargetVersionCollector } from "../ncu/run";
+import { resolveScopeEffective } from "../scope";
 import {
   buildPackagesFromBaseCandidates,
   buildPackagesFromCandidates,
-} from "./report/build";
-import { formatNextUpdatesPromptMarkdown as formatReportMarkdown } from "./report/format";
-import { resolveScopeEffective } from "./scope";
+} from "./build";
+import { formatNextUpdatesPromptMarkdown as formatReportMarkdown } from "./format";
 import type { NextUpdatesReport } from "./types";
 
 export async function collectNextUpdatesReport(options: {

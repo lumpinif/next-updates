@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   detectWorkspacePatterns,
   readRootPackageJson,
-} from "../../fs/workspaces";
+} from "../../infra/fs/workspaces";
 import {
   buildWorkspaceGroups,
   buildWorkspaceLabel,

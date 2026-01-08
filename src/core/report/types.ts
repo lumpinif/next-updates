@@ -7,7 +7,7 @@ import type {
 import type {
   NextUpdatesEvidence,
   NextUpdatesVersionWindow,
-} from "../../evidence";
+} from "../evidence/collect";
 
 export type NextUpdatesVersionSpec = {
   range: string;

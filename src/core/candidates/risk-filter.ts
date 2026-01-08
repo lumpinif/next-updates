@@ -1,7 +1,7 @@
 import { compare, parse } from "semver";
 
-import type { NextUpdatesRisk } from "../../../config/options";
-import type { NextUpdatesCandidateBase } from "../types";
+import type { NextUpdatesRisk } from "../../config/options";
+import type { NextUpdatesCandidateBase } from "../report/types";
 
 type RiskGroup =
   | "major"

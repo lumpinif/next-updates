@@ -4,7 +4,7 @@ import type {
   NextUpdatesDep,
   NextUpdatesScope,
   NextUpdatesTarget,
-} from "../../../config/options";
+} from "../../config/options";
 
 type FilterResults = NonNullable<RunOptions["filterResults"]>;
 
