@@ -14,15 +14,11 @@
     "url": "https://github.com/lumpinif/next-updates/issues"
   },
   "exports": {
-    ".": "./dist/index.mjs",
     "./package.json": "./package.json"
   },
   "bin": {
     "next-updates": "./dist/bin.mjs"
   },
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts",
   "files": [
     "dist"
   ],
