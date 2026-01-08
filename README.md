@@ -1,4 +1,4 @@
-# next-updates - use one prompt to make your agent tells you what to upgrade and why in your current repo
+# You can use this one prompt to make your agent tells you what to upgrade and why in your current repo
 
 Paste this into your favorite coding agent (Cursor, Codex, Claude Code). It will scan and tell you what to upgrade in your current repo, based on what you are building.
 
